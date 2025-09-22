@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, ChangeEvent } from 'react';
+import Image from 'next/image';
 
 interface Collaborator {
   collaborator_id: string;
@@ -77,11 +78,14 @@ const Products: React.FC = () => {
     setForm(prev => ({ ...prev, [name]: value }));
   };
 
-  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length) {
-      setForm(prev => ({ ...prev, image_file: e.target.files[0] }));
-    }
-  };
+ const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
+  const file = e.target.files?.[0];
+  if (file) {
+    setForm(prev => ({ ...prev, image_file: file }));
+  }
+};
+
+
 
   const resetForm = () => {
     setForm({
@@ -158,8 +162,12 @@ const Products: React.FC = () => {
 
       resetForm();
       fetchProducts(selectedCollaborator);
-    } catch (err: any) {
+    } catch (err) {
+       if (err instanceof Error){
       setError(err.message);
+       }else {
+    setError('Something went wrong');
+  }
     } finally {
       setLoading(false);
     }
@@ -452,11 +460,20 @@ const Products: React.FC = () => {
                 >
                   {/* Product Image */}
                   <div className="relative h-40 bg-slate-600/30">
-                    <img
+                  {/**   <img
                       src={product.image_url || '/placeholder.png'}
                       alt={product.name}
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
-                    />
+                    /> **/}
+
+                    <Image
+  src={product.image_url || '/placeholder.png'}
+  alt={product.name}
+  width={500} // ← replace with your actual size
+  height={300} // ← replace with your actual size
+  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+
+/>
                     <div className="absolute top-2 right-2">
                       <span className={`px-2 py-1 rounded-full text-xs font-medium ${
                         product.status === 'active' 
