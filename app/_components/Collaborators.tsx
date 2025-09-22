@@ -73,8 +73,8 @@ const Collaborators: React.FC = () => {
       };
 
       const url = editingId 
-        ? `http://127.0.0.1:5052/api/collaborators/${editingId}`
-        : 'http://127.0.0.1:5052/api/collaborators';
+        ? `https://hfg-onboard-hqqb.onrender.com/api/collaborators/${editingId}`
+        : 'https://hfg-onboard-hqqb.onrender.com/api/collaborators';
       
       const method = editingId ? 'PUT' : 'POST';
 
@@ -122,7 +122,7 @@ const Collaborators: React.FC = () => {
 
     setDeleting(collaboratorId);
     try {
-      const res = await fetch(`http://127.0.0.1:5052/api/collaborators/${collaboratorId}`, {
+      const res = await fetch(`https://hfg-onboard-hqqb.onrender.com/api/collaborators/${collaboratorId}`, {
         method: 'DELETE'
       });
 
