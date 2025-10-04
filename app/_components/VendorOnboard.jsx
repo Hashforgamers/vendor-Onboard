@@ -56,9 +56,7 @@ const VendorOnboardingForm = () => {
   const [submitStatus, setSubmitStatus] = useState(null);
 
   const gameOptions = [
-    'Counter-Strike 2', 'Valorant', 'League of Legends', 'Dota 2', 'Fortnite',
-    'PUBG', 'Call of Duty', 'Apex Legends', 'Overwatch 2', 'Rocket League',
-    'FIFA 24', 'GTA V', 'Minecraft', 'Among Us', 'Fall Guys'
+    'pc','ps5','xbox','vr'
   ];
 
   const weekDays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
