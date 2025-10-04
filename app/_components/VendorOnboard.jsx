@@ -325,7 +325,7 @@ const VendorOnboardingForm = () => {
 
       console.log('Files being sent:', Object.keys(documents).filter(key => documents[key]));
 
-      const response = await fetch(`https://hfg-onboard-hqqb.onrender.com/api/onboard`, {
+      const response = await fetch(`https://hfg-onboard.onrender.com/api/onboard`, {
         method: 'POST',
         body: formDataToSend
       });
