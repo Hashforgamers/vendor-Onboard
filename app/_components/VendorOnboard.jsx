@@ -1,12 +1,15 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Upload, Clock, MapPin, Phone, Building, FileText, GamepadIcon, Check, X } from 'lucide-react';
+import { Upload, Clock, MapPin, Phone, Building, FileText, GamepadIcon, Check, X, User, Lock, Key } from 'lucide-react';
 
 const VendorOnboardingForm = () => {
   const [formData, setFormData] = useState({
     cafe_name: '',
     owner_name: '',
+    vendor_account_email: '',
+    vendor_pin: '',
+    vendor_password: '',
     contact_info: {
       email: '',
       phone: '',
@@ -25,13 +28,13 @@ const VendorOnboardingForm = () => {
       tax_id: ''
     },
     timing: {
-      monday: { open: '09:00', close: '22:00', closed: false },
-      tuesday: { open: '09:00', close: '22:00', closed: false },
-      wednesday: { open: '09:00', close: '22:00', closed: false },
-      thursday: { open: '09:00', close: '22:00', closed: false },
-      friday: { open: '09:00', close: '22:00', closed: false },
-      saturday: { open: '09:00', close: '23:00', closed: false },
-      sunday: { open: '10:00', close: '22:00', closed: false }
+      mon: { open: '09:00', close: '22:00', closed: false },
+      tue: { open: '09:00', close: '22:00', closed: false },
+      wed: { open: '09:00', close: '22:00', closed: false },
+      thu: { open: '09:00', close: '22:00', closed: false },
+      fri: { open: '09:00', close: '22:00', closed: false },
+      sat: { open: '09:00', close: '23:00', closed: false },
+      sun: { open: '10:00', close: '22:00', closed: false }
     },
     opening_day: '',
     available_games: []
@@ -59,7 +62,16 @@ const VendorOnboardingForm = () => {
     'pc','ps5','xbox','vr'
   ];
 
-  const weekDays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+  // ✅ UPDATED: Use abbreviated day names to match backend
+  const weekDays = [
+    { key: 'mon', label: 'Monday' },
+    { key: 'tue', label: 'Tuesday' },
+    { key: 'wed', label: 'Wednesday' },
+    { key: 'thu', label: 'Thursday' },
+    { key: 'fri', label: 'Friday' },
+    { key: 'sat', label: 'Saturday' },
+    { key: 'sun', label: 'Sunday' }
+  ];
 
   const convertTo12HourFormat = (time24) => {
     if (!time24 || time24 === '') {
@@ -77,8 +89,9 @@ const VendorOnboardingForm = () => {
       
       const period = hour >= 12 ? 'PM' : 'AM';
       const hour12 = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
+      const paddedHour = hour12.toString().padStart(2, '0'); // ✅ Zero-padded
       
-      return `${hour12}:${minutes} ${period}`;
+      return `${paddedHour}:${minutes} ${period}`;
     } catch (error) {
       console.error('Error converting time:', time24, error);
       return null;
@@ -90,7 +103,8 @@ const VendorOnboardingForm = () => {
     
     if (!formData.cafe_name.trim()) errors.push('Cafe name is required');
     if (!formData.owner_name.trim()) errors.push('Owner name is required');
-    if (!formData.contact_info.email.trim()) errors.push('Email is required');
+    if (!formData.vendor_account_email.trim()) errors.push('Account email is required');
+    if (!formData.contact_info.email.trim()) errors.push('Contact email is required');
     if (!formData.contact_info.phone.trim()) errors.push('Phone is required');
     if (!formData.opening_day) errors.push('Opening date is required');
     if (!formData.physicalAddress.street.trim()) errors.push('Street address is required');
@@ -102,16 +116,31 @@ const VendorOnboardingForm = () => {
     if (!formData.business_registration_details.business_type) errors.push('Business type is required');
     if (!formData.business_registration_details.tax_id.trim()) errors.push('Tax ID is required');
     
-    const hasOpenDays = weekDays.some(day => !formData.timing[day].closed);
+    // ✅ UPDATED: Validate 4-digit PIN
+    if (formData.vendor_pin && formData.vendor_pin.trim()) {
+      if (!/^\d{4}$/.test(formData.vendor_pin.trim())) {
+        errors.push('PIN must be exactly 4 digits');
+      }
+    }
+    
+    // ✅ Validate password if provided
+    if (formData.vendor_password && formData.vendor_password.trim()) {
+      if (formData.vendor_password.trim().length < 6) {
+        errors.push('Password must be at least 6 characters');
+      }
+    }
+    
+    // ✅ UPDATED: Check abbreviated day names
+    const hasOpenDays = weekDays.some(day => !formData.timing[day.key].closed);
     if (!hasOpenDays) errors.push('At least one day must be open');
     
     weekDays.forEach(day => {
-      const timing = formData.timing[day];
+      const timing = formData.timing[day.key];
       if (!timing.closed) {
-        if (!timing.open) errors.push(`${day.charAt(0).toUpperCase() + day.slice(1)}: Opening time is required`);
-        if (!timing.close) errors.push(`${day.charAt(0).toUpperCase() + day.slice(1)}: Closing time is required`);
+        if (!timing.open) errors.push(`${day.label}: Opening time is required`);
+        if (!timing.close) errors.push(`${day.label}: Closing time is required`);
         if (timing.open && timing.close && timing.open >= timing.close) {
-          errors.push(`${day.charAt(0).toUpperCase() + day.slice(1)}: Opening time must be before closing time`);
+          errors.push(`${day.label}: Opening time must be before closing time`);
         }
       }
     });
@@ -138,7 +167,6 @@ const VendorOnboardingForm = () => {
   useEffect(()=>{
      console.log(process.env.VENDOR_ONBOARD_URL)
   },[])
-  
 
   const handleInputChange = (section, field, value) => {
     if (section) {
@@ -204,17 +232,20 @@ const VendorOnboardingForm = () => {
     setFormData({
       cafe_name: '',
       owner_name: '',
+      vendor_account_email: '',
+      vendor_pin: '',
+      vendor_password: '',
       contact_info: { email: '', phone: '', website: '' },
       physicalAddress: { street: '', city: '', state: '', zipCode: '', country: '' },
       business_registration_details: { registration_number: '', business_type: '', tax_id: '' },
       timing: {
-        monday: { open: '09:00', close: '22:00', closed: false },
-        tuesday: { open: '09:00', close: '22:00', closed: false },
-        wednesday: { open: '09:00', close: '22:00', closed: false },
-        thursday: { open: '09:00', close: '22:00', closed: false },
-        friday: { open: '09:00', close: '22:00', closed: false },
-        saturday: { open: '09:00', close: '23:00', closed: false },
-        sunday: { open: '10:00', close: '22:00', closed: false }
+        mon: { open: '09:00', close: '22:00', closed: false },
+        tue: { open: '09:00', close: '22:00', closed: false },
+        wed: { open: '09:00', close: '22:00', closed: false },
+        thu: { open: '09:00', close: '22:00', closed: false },
+        fri: { open: '09:00', close: '22:00', closed: false },
+        sat: { open: '09:00', close: '23:00', closed: false },
+        sun: { open: '10:00', close: '22:00', closed: false }
       },
       opening_day: '',
       available_games: []
@@ -254,11 +285,12 @@ const VendorOnboardingForm = () => {
       
       const processedTiming = {};
       
+      // ✅ UPDATED: Use abbreviated day names
       weekDays.forEach(day => {
-        const dayTiming = formData.timing[day];
+        const dayTiming = formData.timing[day.key];
         
         if (dayTiming.closed) {
-          processedTiming[day] = {
+          processedTiming[day.key] = {
             open: null,
             close: null,
             closed: true
@@ -267,14 +299,14 @@ const VendorOnboardingForm = () => {
           const openTime = convertTo12HourFormat(dayTiming.open);
           const closeTime = convertTo12HourFormat(dayTiming.close);
           
-          processedTiming[day] = {
+          processedTiming[day.key] = {
             open: openTime,
             close: closeTime,
             closed: false
           };
           
           if (!openTime || !closeTime) {
-            throw new Error(`Invalid timing for ${day}: open=${dayTiming.open}, close=${dayTiming.close}`);
+            throw new Error(`Invalid timing for ${day.label}: open=${dayTiming.open}, close=${dayTiming.close}`);
           }
         }
       });
@@ -282,6 +314,9 @@ const VendorOnboardingForm = () => {
       const jsonData = {
         cafe_name: formData.cafe_name.trim(),
         owner_name: formData.owner_name.trim(),
+        vendor_account_email: formData.vendor_account_email.trim(),
+        vendor_pin: formData.vendor_pin.trim() || null,
+        vendor_password: formData.vendor_password.trim() || null,
         contact_info: {
           email: formData.contact_info.email.trim(),
           phone: formData.contact_info.phone.trim(),
@@ -363,7 +398,6 @@ const VendorOnboardingForm = () => {
   return (
     <div className="min-h-screen bg-slate-950 py-6">
       <div className="max-w-6xl mx-auto px-4">
-        {/* Compact Header */}
         <div className="text-center mb-6">
           <div className="flex items-center justify-center mb-2">
             <GamepadIcon className="h-8 w-8 text-blue-400 mr-2" />
@@ -372,7 +406,6 @@ const VendorOnboardingForm = () => {
           <p className="text-slate-400 text-sm">Vendor Onboarding Portal</p>
         </div>
 
-        {/* Status Messages */}
         {submitStatus && (
           <div className={`mb-4 p-3 rounded-lg ${submitStatus.type === 'success' ? 'bg-green-900 border border-green-600' : 'bg-red-900 border border-red-600'}`}>
             <div className="flex items-start">
@@ -389,6 +422,73 @@ const VendorOnboardingForm = () => {
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Account Information Section */}
+          <div className="bg-slate-900 rounded-lg p-4 border border-slate-700">
+            <div className="flex items-center mb-3">
+              <User className="h-5 w-5 text-blue-400 mr-2" />
+              <h2 className="text-lg font-semibold text-white">Account Information</h2>
+            </div>
+            <div className="bg-blue-900/20 border border-blue-700/50 rounded p-3 mb-3">
+              <p className="text-blue-300 text-xs">
+                <strong>Account Email:</strong> This email will be used for login and managing multiple cafes. 
+                If you already have an account, use the same email to link this cafe to your existing account.
+              </p>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div className="md:col-span-3">
+                <label className="block mb-1 text-white text-sm font-medium">Account Email (Login) *</label>
+                <input
+                  type="email"
+                  required
+                  value={formData.vendor_account_email}
+                  onChange={(e) => handleInputChange(null, 'vendor_account_email', e.target.value)}
+                  className="w-full p-2 text-sm rounded border border-slate-700 bg-slate-800 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="Enter account email for login"
+                />
+                <p className="text-xs text-slate-400 mt-1">Use existing email to link multiple cafes to one account</p>
+              </div>
+
+              {/* ✅ UPDATED: 4-digit PIN */}
+              <div>
+                <label className="block mb-1 text-white text-sm font-medium">
+                  <div className="flex items-center">
+                    <Key className="h-3 w-3 mr-1" />
+                    Vendor PIN (Optional - 4 digits)
+                  </div>
+                </label>
+                <input
+                  type="text"
+                  maxLength="4"
+                  pattern="\d{4}"
+                  value={formData.vendor_pin}
+                  onChange={(e) => handleInputChange(null, 'vendor_pin', e.target.value.replace(/\D/g, ''))}
+                  className="w-full p-2 text-sm rounded border border-slate-700 bg-slate-800 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="Enter 4-digit PIN"
+                />
+                <p className="text-xs text-slate-400 mt-1">Leave empty to auto-generate</p>
+              </div>
+
+              {/* Optional Password Field */}
+              <div className="md:col-span-2">
+                <label className="block mb-1 text-white text-sm font-medium">
+                  <div className="flex items-center">
+                    <Lock className="h-3 w-3 mr-1" />
+                    Vendor Password (Optional - min 6 chars)
+                  </div>
+                </label>
+                <input
+                  type="text"
+                  value={formData.vendor_password}
+                  onChange={(e) => handleInputChange(null, 'vendor_password', e.target.value)}
+                  className="w-full p-2 text-sm rounded border border-slate-700 bg-slate-800 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="Enter password (min 6 characters)"
+                />
+                <p className="text-xs text-slate-400 mt-1">Leave empty to auto-generate</p>
+              </div>
+            </div>
+          </div>
+
           {/* Basic Information */}
           <div className="bg-slate-900 rounded-lg p-4 border border-slate-700">
             <div className="flex items-center mb-3">
@@ -437,16 +537,21 @@ const VendorOnboardingForm = () => {
               <Phone className="h-5 w-5 text-blue-400 mr-2" />
               <h2 className="text-lg font-semibold text-white">Contact Information</h2>
             </div>
+            <div className="bg-amber-900/20 border border-amber-700/50 rounded p-3 mb-3">
+              <p className="text-amber-300 text-xs">
+                <strong>Contact Email:</strong> This is the operational email for this specific cafe (can be different from account email).
+              </p>
+            </div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <div>
-                <label className="block mb-1 text-white text-sm font-medium">Email *</label>
+                <label className="block mb-1 text-white text-sm font-medium">Contact Email *</label>
                 <input
                   type="email"
                   required
                   value={formData.contact_info.email}
                   onChange={(e) => handleInputChange('contact_info', 'email', e.target.value)}
                   className="w-full p-2 text-sm rounded border border-slate-700 bg-slate-800 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="Enter email"
+                  placeholder="Operational contact email"
                 />
               </div>
               <div>
@@ -582,7 +687,7 @@ const VendorOnboardingForm = () => {
             </div>
           </div>
 
-          {/* Operating Hours */}
+          {/* ✅ UPDATED: Operating Hours with abbreviated day names */}
           <div className="bg-slate-900 rounded-lg p-4 border border-slate-700">
             <div className="flex items-center mb-3">
               <Clock className="h-5 w-5 text-blue-400 mr-2" />
@@ -590,35 +695,35 @@ const VendorOnboardingForm = () => {
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
               {weekDays.map((day) => (
-                <div key={day} className="flex items-center justify-between p-2 bg-slate-800 rounded border border-slate-700">
+                <div key={day.key} className="flex items-center justify-between p-2 bg-slate-800 rounded border border-slate-700">
                   <div className="flex items-center space-x-2">
-                    <span className="text-white text-sm w-16 capitalize">{day}</span>
+                    <span className="text-white text-sm w-16">{day.label}</span>
                     <label className="flex items-center">
                       <input
                         type="checkbox"
-                        checked={formData.timing[day].closed}
-                        onChange={(e) => handleTimingChange(day, 'closed', e.target.checked)}
+                        checked={formData.timing[day.key].closed}
+                        onChange={(e) => handleTimingChange(day.key, 'closed', e.target.checked)}
                         className="mr-1 w-3 h-3 text-blue-600 rounded border-slate-600 bg-slate-700"
                       />
                       <span className="text-slate-400 text-xs">Closed</span>
                     </label>
                   </div>
-                  {!formData.timing[day].closed && (
+                  {!formData.timing[day.key].closed && (
                     <div className="flex items-center space-x-1">
                       <input
                         type="time"
-                        value={formData.timing[day].open}
-                        onChange={(e) => handleTimingChange(day, 'open', e.target.value)}
+                        value={formData.timing[day.key].open}
+                        onChange={(e) => handleTimingChange(day.key, 'open', e.target.value)}
                         className="p-1 text-xs bg-slate-700 border border-slate-600 rounded text-white w-20"
-                        required={!formData.timing[day].closed}
+                        required={!formData.timing[day.key].closed}
                       />
                       <span className="text-slate-400 text-xs">to</span>
                       <input
                         type="time"
-                        value={formData.timing[day].close}
-                        onChange={(e) => handleTimingChange(day, 'close', e.target.value)}
+                        value={formData.timing[day.key].close}
+                        onChange={(e) => handleTimingChange(day.key, 'close', e.target.value)}
                         className="p-1 text-xs bg-slate-700 border border-slate-600 rounded text-white w-20"
-                        required={!formData.timing[day].closed}
+                        required={!formData.timing[day.key].closed}
                       />
                     </div>
                   )}
