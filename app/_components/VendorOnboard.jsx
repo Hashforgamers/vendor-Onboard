@@ -737,7 +737,7 @@ const VendorOnboardingForm = () => {
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center">
                 <GamepadIcon className="h-5 w-5 text-blue-400 mr-2" />
-                <h2 className="text-lg font-semibold text-white">Available Games</h2>
+                <h2 className="text-lg font-semibold text-white">Add Console (pc,ps5)</h2>
               </div>
               <button
                 type="button"
@@ -751,7 +751,7 @@ const VendorOnboardingForm = () => {
               {games.map((game, index) => (
                 <div key={index} className="grid grid-cols-1 md:grid-cols-4 gap-2 p-2 bg-slate-800 rounded border border-slate-700">
                   <div>
-                    <label className="block mb-1 text-white text-xs">Game *</label>
+                    <label className="block mb-1 text-white text-xs">Console *</label>
                     <select
                       value={game.name}
                       onChange={(e) => updateGame(index, 'name', e.target.value)}
