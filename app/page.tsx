@@ -5,9 +5,12 @@ import Navbar from './_components/Navbar';
 import Collaborators from './_components/Collaborators';
 import Products from './_components/Products';
 import VendorOnboardingForm from "./_components/VendorOnboard";
+import VendorDeboard from "./_components/VendorDeboard";
+
+type Page = 'vendorOnboarding' | 'collaborator' | 'products' | 'vendorOrder' | 'vendorDeboard';
 
 const HomePage: React.FC = () => {
-  const [currentPage, setCurrentPage] = useState<'vendorOnboarding' | 'collaborator' | 'products' | 'vendorOrder'>('vendorOnboarding');
+  const [currentPage, setCurrentPage] = useState<Page>('vendorOnboarding');
 
   return (
     <>
@@ -15,7 +18,7 @@ const HomePage: React.FC = () => {
       <main className="bg-slate-950 min-h-screen p-6">
         {currentPage === 'vendorOnboarding' && (
           <div className="text-white text-center py-20 text-2xl">
-            <VendorOnboardingForm/>
+            <VendorOnboardingForm />
           </div>
         )}
         {currentPage === 'collaborator' && <Collaborators />}
@@ -25,6 +28,7 @@ const HomePage: React.FC = () => {
             Vendor Order Page Coming Soon
           </div>
         )}
+        {currentPage === 'vendorDeboard' && <VendorDeboard />}
       </main>
     </>
   );
