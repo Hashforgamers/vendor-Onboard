@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Hash For Gamers",
-  description: "Onboarding",
+  title: "Hash Super Admin Dashboard",
+  description: "Hash super admin control center for onboarding, verification, settlements, collaborators, products and subscriptions.",
 };
 
 export default function RootLayout({

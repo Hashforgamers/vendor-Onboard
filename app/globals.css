@@ -1,26 +1,456 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --bg: #f3f4f6;
+  --surface: #ffffff;
+  --surface-2: #f8fafc;
+  --border: #dbe0e8;
+  --text: #111827;
+  --text-muted: #475569;
+  --brand: #0f766e;
+  --brand-2: #0e7490;
+  --danger: #b91c1c;
+  --success: #166534;
+  --shadow: 0 2px 16px rgba(15, 23, 42, 0.08);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --bg: #0b1220;
+    --surface: #111b2e;
+    --surface-2: #0f1729;
+    --border: #263349;
+    --text: #e5edf7;
+    --text-muted: #9db0cb;
+    --brand: #14b8a6;
+    --brand-2: #22d3ee;
+    --danger: #f87171;
+    --success: #4ade80;
+    --shadow: 0 2px 18px rgba(2, 6, 23, 0.45);
   }
 }
 
+* {
+  box-sizing: border-box;
+}
+
+html,
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-geist-sans), -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+a {
+  color: var(--brand-2);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.86rem;
+  color: var(--text-muted);
+}
+
+input,
+select,
+textarea,
+button {
+  font: inherit;
+}
+
+input,
+select,
+textarea {
+  width: 100%;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  border-radius: 10px;
+  padding: 9px 10px;
+}
+
+input:focus,
+select:focus,
+textarea:focus,
+button:focus {
+  outline: 2px solid color-mix(in srgb, var(--brand), transparent 60%);
+  outline-offset: 1px;
+}
+
+.app-shell {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 280px 1fr;
+}
+
+.side-nav {
+  border-right: 1px solid var(--border);
+  background: var(--surface);
+  padding: 20px 14px;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow: auto;
+}
+
+.brand-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 6px 8px 14px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 14px;
+}
+
+.brand-row strong {
+  display: block;
+  font-size: 0.98rem;
+}
+
+.brand-row small {
+  color: var(--text-muted);
+}
+
+.side-nav nav {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.nav-btn {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  text-align: left;
+  background: var(--surface);
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  cursor: pointer;
+}
+
+.nav-btn.active {
+  border-color: color-mix(in srgb, var(--brand), transparent 30%);
+  background: color-mix(in srgb, var(--brand), transparent 90%);
+  color: var(--text);
+}
+
+.side-note {
+  margin-top: 14px;
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  padding: 10px;
+  display: flex;
+  gap: 8px;
+  color: var(--text-muted);
+}
+
+.content-area {
+  padding: 18px;
+  overflow-x: auto;
+}
+
+.page-topbar {
+  margin-bottom: 14px;
+}
+
+.page-topbar h1 {
+  margin: 0;
+  font-size: 1.6rem;
+  letter-spacing: 0.01em;
+}
+
+.page-topbar p {
+  margin: 4px 0 0;
+  color: var(--text-muted);
+  font-size: 0.93rem;
+}
+
+.panel {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+  padding: 14px;
+  display: grid;
+  gap: 14px;
+}
+
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.section-header h2 {
+  margin: 0;
+  font-size: 1.08rem;
+}
+
+.section-header p {
+  margin: 4px 0 0;
+  font-size: 0.87rem;
+  color: var(--text-muted);
+}
+
+.section-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn-primary,
+.btn-secondary,
+.btn-ghost {
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  padding: 8px 12px;
+  cursor: pointer;
+  background: var(--surface-2);
+  color: var(--text);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.btn-primary {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: #ffffff;
+}
+
+.btn-primary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btn-ghost {
+  background: transparent;
+}
+
+.toolbar {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(180px, 1fr));
+  gap: 10px;
+  align-items: end;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+.subsection {
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  border-radius: 12px;
+  padding: 10px;
+  display: grid;
+  gap: 10px;
+}
+
+.subsection h3 {
+  margin: 0;
+  font-size: 0.98rem;
+}
+
+.table-wrap {
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.table {
+  width: 100%;
+  min-width: 820px;
+  border-collapse: collapse;
+}
+
+.table th,
+.table td {
+  border-bottom: 1px solid var(--border);
+  padding: 9px 10px;
+  text-align: left;
+  font-size: 0.86rem;
+}
+
+.table thead th {
+  background: var(--surface-2);
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.table tbody tr:hover {
+  background: color-mix(in srgb, var(--brand), transparent 94%);
+}
+
+.table small {
+  color: var(--text-muted);
+}
+
+.pill {
+  display: inline-flex;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  padding: 2px 8px;
+  font-size: 0.74rem;
+}
+
+.pill-green {
+  border-color: color-mix(in srgb, var(--success), transparent 20%);
+  color: var(--success);
+  background: color-mix(in srgb, var(--success), transparent 88%);
+}
+
+.pill-muted {
+  color: var(--text-muted);
+}
+
+.row-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+.stat-card {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px;
+  background: var(--surface-2);
+  display: grid;
+  gap: 4px;
+}
+
+.stat-card span {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.stat-card strong {
+  font-size: 1.02rem;
+}
+
+.error-banner,
+.success-banner {
+  border-radius: 10px;
+  padding: 9px 10px;
+  font-size: 0.86rem;
+}
+
+.error-banner {
+  border: 1px solid color-mix(in srgb, var(--danger), transparent 40%);
+  background: color-mix(in srgb, var(--danger), transparent 90%);
+  color: var(--danger);
+}
+
+.success-banner {
+  border: 1px solid color-mix(in srgb, var(--success), transparent 45%);
+  background: color-mix(in srgb, var(--success), transparent 90%);
+  color: var(--success);
+}
+
+.muted-line {
+  color: var(--text-muted);
+  font-size: 0.86rem;
+}
+
+.divider {
+  border-top: 1px solid var(--border);
+}
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: 1.2fr 0.8fr;
+  gap: 12px;
+}
+
+.meta-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(140px, 1fr));
+  gap: 8px;
+  font-size: 0.86rem;
+}
+
+.chip-grid {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 6px 10px;
+  background: var(--surface);
+}
+
+@media (max-width: 1200px) {
+  .form-grid {
+    grid-template-columns: repeat(2, minmax(180px, 1fr));
+  }
+
+  .toolbar {
+    grid-template-columns: repeat(2, minmax(180px, 1fr));
+  }
+
+  .stats-grid {
+    grid-template-columns: repeat(2, minmax(180px, 1fr));
+  }
+
+  .detail-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 900px) {
+  .app-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .side-nav {
+    position: static;
+    height: auto;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .content-area {
+    padding: 12px;
+  }
+}
+
+@media (max-width: 640px) {
+  .form-grid,
+  .toolbar,
+  .stats-grid,
+  .meta-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .table {
+    min-width: 680px;
+  }
 }
