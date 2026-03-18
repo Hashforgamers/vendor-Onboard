@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import Image from 'next/image';
 import {
   BadgeCheck,
   Building2,
@@ -9,7 +10,6 @@ import {
   Package,
   RefreshCcw,
   Settings2,
-  ShieldCheck,
   UserPlus,
   Wallet,
 } from 'lucide-react';
@@ -368,6 +368,21 @@ function OnboardPanel() {
 
   return (
     <section className="panel">
+      <div className="onboard-logo-banner">
+        <Image
+          src="/hash-logo.png"
+          alt="Hash For Gamers Logo"
+          width={56}
+          height={56}
+          className="hash-logo hash-logo-lg"
+          priority
+        />
+        <div>
+          <strong>Hash For Gamers</strong>
+          <small>New Vendor Onboarding</small>
+        </div>
+      </div>
+
       <SectionHeader
         title="Onboard New Cafe"
         subtitle="Create a new vendor with inventory, operating hours, amenities, and documents."
@@ -1639,7 +1654,14 @@ export default function HomePage() {
     <div className="app-shell">
       <aside className="side-nav">
         <div className="brand-row">
-          <ShieldCheck size={18} />
+          <Image
+            src="/hash-logo.png"
+            alt="Hash For Gamers Logo"
+            width={40}
+            height={40}
+            className="hash-logo"
+            priority
+          />
           <div>
             <strong>Hash Super Admin</strong>
             <small>Vendor Control Center</small>
