@@ -402,6 +402,15 @@ button:focus {
   color: var(--success);
 }
 
+.info-banner {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-2);
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  padding: 8px 10px;
+}
+
 .muted-line {
   color: var(--text-muted);
   font-size: 0.86rem;
@@ -440,6 +449,100 @@ button:focus {
   background: var(--surface);
 }
 
+.compact-toolbar {
+  grid-template-columns: 1fr 1fr auto;
+}
+
+.overlay-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(2, 6, 23, 0.62);
+  z-index: 70;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+}
+
+.overlay-panel {
+  width: min(1320px, 100%);
+  max-height: calc(100vh - 36px);
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  padding: 14px;
+  display: grid;
+  gap: 12px;
+}
+
+.overlay-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.overlay-header h3 {
+  margin: 0;
+  font-size: 1.02rem;
+}
+
+.overlay-header p {
+  margin: 4px 0 0;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.preview-overlay {
+  width: min(1100px, 100%);
+}
+
+.preview-frame {
+  width: 100%;
+  min-height: 74vh;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #fff;
+}
+
+.analytics-bars {
+  display: grid;
+  gap: 10px;
+}
+
+.bar-row {
+  display: grid;
+  grid-template-columns: 180px 1fr 50px;
+  gap: 10px;
+  align-items: center;
+}
+
+.bar-label {
+  font-size: 0.84rem;
+  color: var(--text-muted);
+}
+
+.bar-track {
+  height: 12px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text), transparent 90%);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.bar-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--brand), var(--brand-2));
+}
+
+.bar-value {
+  text-align: right;
+  font-size: 0.84rem;
+  font-weight: 600;
+}
+
 @media (max-width: 1200px) {
   .form-grid {
     grid-template-columns: repeat(2, minmax(180px, 1fr));
@@ -447,6 +550,10 @@ button:focus {
 
   .toolbar {
     grid-template-columns: repeat(2, minmax(180px, 1fr));
+  }
+
+  .compact-toolbar {
+    grid-template-columns: 1fr;
   }
 
   .stats-grid {
@@ -485,5 +592,9 @@ button:focus {
 
   .table {
     min-width: 680px;
+  }
+
+  .bar-row {
+    grid-template-columns: 1fr;
   }
 }

@@ -3,15 +3,18 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Image from 'next/image';
 import {
+  BarChart3,
   BadgeCheck,
   Building2,
   ClipboardCheck,
+  ExternalLink,
   Handshake,
   Package,
   RefreshCcw,
   Settings2,
   UserPlus,
   Wallet,
+  X,
 } from 'lucide-react';
 
 type ModuleId =
@@ -19,6 +22,7 @@ type ModuleId =
   | 'cafes'
   | 'verification'
   | 'settlements'
+  | 'analytics'
   | 'collaborators'
   | 'products'
   | 'subscriptions';
@@ -152,11 +156,65 @@ const weekDays = [
   { key: 'sun', label: 'Sun' },
 ] as const;
 
+type PlanTier = {
+  code: string;
+  name: string;
+  pc_limit: number;
+  monthly: number;
+  quarterly: number;
+  yearly: number;
+  onboarding_offer?: string;
+  features: string[];
+};
+
+const PLAN_STORAGE_KEY = 'hash_superadmin_plan_catalog_v1';
+
+const DEFAULT_PLAN_CATALOG: PlanTier[] = [
+  {
+    code: 'early_bird',
+    name: 'Early Bird',
+    pc_limit: 20,
+    monthly: 0,
+    quarterly: 0,
+    yearly: 0,
+    onboarding_offer: 'Free for first 2 months, then auto-migrate to Base with 20% first-year discount',
+    features: ['All core booking + inventory', 'Owner dashboard', '1 staff login', 'Email support']
+  },
+  {
+    code: 'base',
+    name: 'Base',
+    pc_limit: 25,
+    monthly: 1999,
+    quarterly: 5399,
+    yearly: 19999,
+    features: ['Realtime bookings', '1 kiosk mapping', 'Basic reports', '2 staff logins']
+  },
+  {
+    code: 'pro',
+    name: 'Pro',
+    pc_limit: 60,
+    monthly: 4999,
+    quarterly: 13499,
+    yearly: 49999,
+    features: ['Multi-kiosk + sockets', 'Advanced reports', 'Priority support', '10 staff logins']
+  },
+  {
+    code: 'elite',
+    name: 'Elite',
+    pc_limit: 150,
+    monthly: 8999,
+    quarterly: 24299,
+    yearly: 89999,
+    features: ['Multi-branch ops', 'Premium analytics', 'Dedicated manager', 'Unlimited staff logins']
+  }
+];
+
 const navItems: Array<{ id: ModuleId; label: string; icon: React.ComponentType<{ size?: number }> }> = [
   { id: 'onboard', label: 'Onboard New Cafe', icon: UserPlus },
   { id: 'cafes', label: 'Cafe Registry', icon: Building2 },
   { id: 'verification', label: 'Verification Desk', icon: ClipboardCheck },
   { id: 'settlements', label: 'Day-End Settlements', icon: Wallet },
+  { id: 'analytics', label: 'Analytics', icon: BarChart3 },
   { id: 'collaborators', label: 'Collaborators', icon: Handshake },
   { id: 'products', label: 'Collaborator Products', icon: Package },
   { id: 'subscriptions', label: 'Subscriptions', icon: Settings2 },
@@ -602,6 +660,11 @@ function VendorsPanel({ verificationOnly = false }: { verificationOnly?: boolean
   const [detailLoading, setDetailLoading] = useState(false);
   const [vendorDetail, setVendorDetail] = useState<VendorDetail | null>(null);
   const [selectedDocIds, setSelectedDocIds] = useState<number[]>([]);
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [previewDoc, setPreviewDoc] = useState<{ url: string; type: string } | null>(null);
+  const [ownerPinInput, setOwnerPinInput] = useState('');
+  const [ownerPasswordInput, setOwnerPasswordInput] = useState('');
+  const [staffPinDraft, setStaffPinDraft] = useState<Record<number, string>>({});
   const [staffName, setStaffName] = useState('');
   const [staffRole, setStaffRole] = useState('staff');
 
@@ -628,6 +691,9 @@ function VendorsPanel({ verificationOnly = false }: { verificationOnly?: boolean
     setDetailLoading(true);
     setSelectedVendorId(vendorId);
     setSelectedDocIds([]);
+    setOwnerPinInput('');
+    setOwnerPasswordInput('');
+    setStaffPinDraft({});
     try {
       const data = await apiRequest<{ vendor: VendorDetail }>(`admin/vendors/${vendorId}`);
       setVendorDetail(data.vendor);
@@ -636,6 +702,16 @@ function VendorsPanel({ verificationOnly = false }: { verificationOnly?: boolean
     } finally {
       setDetailLoading(false);
     }
+  }, []);
+
+  const openDetail = useCallback(async (vendorId: number) => {
+    setDetailOpen(true);
+    await loadDetail(vendorId);
+  }, [loadDetail]);
+
+  const closeDetail = useCallback(() => {
+    setDetailOpen(false);
+    setPreviewDoc(null);
   }, []);
 
   const refreshDetail = useCallback(async () => {
@@ -674,13 +750,18 @@ function VendorsPanel({ verificationOnly = false }: { verificationOnly?: boolean
 
   const resetPin = async () => {
     if (!selectedVendorId) return;
-    const customPin = window.prompt('Enter new 4-digit PIN (leave blank for auto-generated):') || '';
+    const customPin = ownerPinInput.trim();
+    if (customPin && !/^\d{4}$/.test(customPin)) {
+      setError('Owner PIN must be exactly 4 digits.');
+      return;
+    }
     try {
       await apiRequest(`admin/vendors/${selectedVendorId}/credentials/reset-pin`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pin: customPin || undefined }),
       });
+      setOwnerPinInput('');
       await refreshDetail();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to reset pin');
@@ -689,7 +770,7 @@ function VendorsPanel({ verificationOnly = false }: { verificationOnly?: boolean
 
   const resetPassword = async () => {
     if (!selectedVendorId) return;
-    const customPassword = window.prompt('Enter temporary password (leave blank for auto-generated):') || '';
+    const customPassword = ownerPasswordInput.trim();
     try {
       const response = await apiRequest<{ data?: { temporary_password?: string } }>(
         `admin/vendors/${selectedVendorId}/credentials/reset-password`,
@@ -700,6 +781,7 @@ function VendorsPanel({ verificationOnly = false }: { verificationOnly?: boolean
         }
       );
       const pwd = response.data?.temporary_password;
+      setOwnerPasswordInput('');
       if (pwd) {
         window.alert(`Temporary password set: ${pwd}`);
       }
@@ -707,6 +789,50 @@ function VendorsPanel({ verificationOnly = false }: { verificationOnly?: boolean
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to reset password');
     }
+  };
+
+  const resetStaffPin = async (staffId: number) => {
+    if (!selectedVendorId) return;
+    const pin = (staffPinDraft[staffId] || '').trim();
+    if (!/^\d{4}$/.test(pin)) {
+      setError('Staff PIN must be exactly 4 digits.');
+      return;
+    }
+
+    const attempts: Array<{ path: string; method: 'POST' | 'PATCH'; body: Record<string, unknown> }> = [
+      {
+        path: `admin/vendors/${selectedVendorId}/team-access/staff/${staffId}/reset-pin`,
+        method: 'POST',
+        body: { pin },
+      },
+      {
+        path: `admin/vendors/${selectedVendorId}/team-access/staff/${staffId}`,
+        method: 'PATCH',
+        body: { pin_code: pin },
+      },
+      {
+        path: `admin/vendors/${selectedVendorId}/team-access/staff/${staffId}`,
+        method: 'PATCH',
+        body: { pin },
+      },
+    ];
+
+    let lastError = '';
+    for (const attempt of attempts) {
+      try {
+        await apiRequest(attempt.path, {
+          method: attempt.method,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(attempt.body),
+        });
+        setStaffPinDraft((prev) => ({ ...prev, [staffId]: '' }));
+        await refreshDetail();
+        return;
+      } catch (e) {
+        lastError = e instanceof Error ? e.message : 'Failed to update staff PIN';
+      }
+    }
+    setError(lastError || 'Failed to update staff PIN');
   };
 
   const addStaff = async () => {
@@ -765,17 +891,40 @@ function VendorsPanel({ verificationOnly = false }: { verificationOnly?: boolean
     [vendors, search]
   );
 
+  const linkedStores = useMemo(() => {
+    if (!vendorDetail) return [] as VendorRow[];
+    const keys = new Set(
+      [vendorDetail.account_email, vendorDetail.contact?.email, vendorDetail.contact?.phone]
+        .filter((value): value is string => Boolean(value))
+        .map((value) => value.trim().toLowerCase())
+    );
+    if (!keys.size) return [] as VendorRow[];
+
+    return vendors.filter((vendor) => {
+      if (vendor.vendor_id === vendorDetail.vendor_id) return false;
+      const lookup = [vendor.email, vendor.phone]
+        .filter((value): value is string => Boolean(value))
+        .map((value) => value.trim().toLowerCase());
+      return lookup.some((value) => keys.has(value));
+    });
+  }, [vendorDetail, vendors]);
+
   return (
     <section className="panel">
       <SectionHeader
         title={verificationOnly ? 'Verification Desk' : 'Cafe Registry'}
         subtitle={verificationOnly
-          ? 'Review uploaded documents and approve/reject onboarding.'
-          : 'Manage all onboarded cafes, credentials, status and team access.'}
+          ? 'Focused queue for pending verification: validate docs, approve or reject quickly.'
+          : 'Operations cockpit for active/inactive cafes: credentials, team access, subscriptions and linked stores.'}
         actions={<button className="btn-secondary" onClick={load}><RefreshCcw size={14} /> Refresh</button>}
       />
 
       {error ? <ErrorBanner message={error} /> : null}
+      <div className="info-banner">
+        {verificationOnly
+          ? 'Verification Desk = onboarding compliance gate. Cafe Registry = day-to-day operational management.'
+          : 'Cafe Registry = operational control center. Use Verification Desk when you only want pending onboarding checks.'}
+      </div>
 
       <div className="toolbar">
         <input placeholder="Search cafe, owner, email, id..." value={search} onChange={(e) => setSearch(e.target.value)} />
@@ -834,7 +983,7 @@ function VendorsPanel({ verificationOnly = false }: { verificationOnly?: boolean
                 <td><small>{v.team_access?.active ?? 0}/{v.team_access?.total ?? 0}</small></td>
                 <td>
                   <div className="row-actions">
-                    <button className="btn-ghost" onClick={() => loadDetail(v.vendor_id)}>View</button>
+                    <button className="btn-ghost" onClick={() => openDetail(v.vendor_id)}>View</button>
                     <button className="btn-ghost" onClick={() => updateStatus(v.vendor_id, 'active')}>Activate</button>
                     <button className="btn-ghost" onClick={() => updateStatus(v.vendor_id, 'inactive')}>Inactivate</button>
                   </div>
@@ -851,158 +1000,254 @@ function VendorsPanel({ verificationOnly = false }: { verificationOnly?: boolean
       </div>
 
       <div className="divider" />
+      <small>Click “View” to open cafe detail in overlay (no bottom-scroll needed).</small>
 
-      {selectedVendorId ? (
-        <div className="detail-grid">
-          <div>
-            <SectionHeader
-              title={`Vendor #${selectedVendorId} Detail`}
-              subtitle="Documents, credentials, subscriptions, and team access"
-              actions={detailLoading ? <small>Loading...</small> : null}
-            />
+      {detailOpen ? (
+        <div className="overlay-backdrop" onClick={closeDetail}>
+          <div className="overlay-panel" onClick={(e) => e.stopPropagation()}>
+            <div className="overlay-header">
+              <div>
+                <h3>{selectedVendorId ? `Vendor #${selectedVendorId} Detail` : 'Vendor Detail'}</h3>
+                <p>Documents, credentials, team access, linked stores, and subscription history.</p>
+              </div>
+              <button className="btn-ghost" onClick={closeDetail}><X size={16} /> Close</button>
+            </div>
+
+            {detailLoading && !vendorDetail ? <LoadingRow text="Loading vendor detail..." /> : null}
 
             {vendorDetail ? (
-              <>
-                <div className="meta-grid">
-                  <div><strong>Cafe:</strong> {vendorDetail.cafe_name}</div>
-                  <div><strong>Owner:</strong> {vendorDetail.owner_name}</div>
-                  <div><strong>Status:</strong> {vendorDetail.status}</div>
-                  <div><strong>Account:</strong> {vendorDetail.account_email || '-'}</div>
-                  <div><strong>Phone:</strong> {vendorDetail.contact?.phone || '-'}</div>
-                  <div><strong>Email:</strong> {vendorDetail.contact?.email || '-'}</div>
-                </div>
+              <div className="detail-grid">
+                <div>
+                  <div className="meta-grid">
+                    <div><strong>Cafe:</strong> {vendorDetail.cafe_name}</div>
+                    <div><strong>Owner:</strong> {vendorDetail.owner_name}</div>
+                    <div><strong>Status:</strong> {vendorDetail.status}</div>
+                    <div><strong>Account:</strong> {vendorDetail.account_email || '-'}</div>
+                    <div><strong>Phone:</strong> {vendorDetail.contact?.phone || '-'}</div>
+                    <div><strong>Email:</strong> {vendorDetail.contact?.email || '-'}</div>
+                  </div>
 
-                <div className="row-actions">
-                  <button className="btn-secondary" onClick={resetPin}>Reset PIN</button>
-                  <button className="btn-secondary" onClick={resetPassword}>Reset Password</button>
-                </div>
+                  <div className="subsection">
+                    <h3>Credentials & Security</h3>
+                    <div className="toolbar compact-toolbar">
+                      <label>
+                        Owner PIN (4 digits)
+                        <input
+                          value={ownerPinInput}
+                          onChange={(e) => setOwnerPinInput(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                          placeholder="Auto if blank"
+                          maxLength={4}
+                        />
+                      </label>
+                      <label>
+                        Temporary Password
+                        <input
+                          type="text"
+                          value={ownerPasswordInput}
+                          onChange={(e) => setOwnerPasswordInput(e.target.value)}
+                          placeholder="Auto if blank"
+                        />
+                      </label>
+                      <div className="row-actions">
+                        <button className="btn-secondary" onClick={resetPin}>Update Owner PIN</button>
+                        <button className="btn-secondary" onClick={resetPassword}>Reset Password</button>
+                      </div>
+                    </div>
+                  </div>
 
-                <div className="subsection">
-                  <h3>Documents</h3>
-                  <div className="table-wrap">
-                    <table className="table">
-                      <thead>
-                        <tr>
-                          <th>Select</th>
-                          <th>Type</th>
-                          <th>Status</th>
-                          <th>Preview</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {vendorDetail.documents.map((doc) => (
-                          <tr key={doc.id}>
-                            <td>
-                              <input
-                                type="checkbox"
-                                checked={selectedDocIds.includes(doc.id)}
-                                onChange={(e) => {
-                                  setSelectedDocIds((prev) => e.target.checked ? [...prev, doc.id] : prev.filter((id) => id !== doc.id));
-                                }}
-                              />
-                            </td>
-                            <td>{doc.document_type}</td>
-                            <td>{doc.status}</td>
-                            <td><a href={doc.document_url} target="_blank" rel="noreferrer">Open</a></td>
+                  <div className="subsection">
+                    <h3>Documents</h3>
+                    <div className="table-wrap">
+                      <table className="table">
+                        <thead>
+                          <tr>
+                            <th>Select</th>
+                            <th>Type</th>
+                            <th>Status</th>
+                            <th>Preview</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                        </thead>
+                        <tbody>
+                          {vendorDetail.documents.map((doc) => (
+                            <tr key={doc.id}>
+                              <td>
+                                <input
+                                  type="checkbox"
+                                  checked={selectedDocIds.includes(doc.id)}
+                                  onChange={(e) => {
+                                    setSelectedDocIds((prev) => e.target.checked ? [...prev, doc.id] : prev.filter((id) => id !== doc.id));
+                                  }}
+                                />
+                              </td>
+                              <td>{doc.document_type}</td>
+                              <td>{doc.status}</td>
+                              <td>
+                                <div className="row-actions">
+                                  <button
+                                    className="btn-ghost"
+                                    onClick={() => setPreviewDoc({ url: doc.document_url, type: doc.document_type })}
+                                  >
+                                    Preview
+                                  </button>
+                                  <a href={doc.document_url} target="_blank" rel="noreferrer" className="btn-ghost">
+                                    <ExternalLink size={14} />
+                                    Open
+                                  </a>
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div className="row-actions">
+                      <button className="btn-primary" onClick={() => verifyDocs('verified')}>Mark Verified</button>
+                      <button className="btn-secondary" onClick={() => verifyDocs('rejected')}>Mark Rejected</button>
+                      <button className="btn-secondary" onClick={() => verifyDocs('unverified')}>Mark Unverified</button>
+                    </div>
                   </div>
-                  <div className="row-actions">
-                    <button className="btn-primary" onClick={() => verifyDocs('verified')}>Mark Verified</button>
-                    <button className="btn-secondary" onClick={() => verifyDocs('rejected')}>Mark Rejected</button>
-                    <button className="btn-secondary" onClick={() => verifyDocs('unverified')}>Mark Unverified</button>
+
+                  <div className="subsection">
+                    <h3>Team Access</h3>
+                    {!vendorDetail.team_access?.available ? (
+                      <small>Team table not available in this environment.</small>
+                    ) : (
+                      <>
+                        <div className="toolbar compact-toolbar">
+                          <input placeholder="Staff name" value={staffName} onChange={(e) => setStaffName(e.target.value)} />
+                          <select value={staffRole} onChange={(e) => setStaffRole(e.target.value)}>
+                            <option value="staff">staff</option>
+                            <option value="manager">manager</option>
+                            <option value="owner">owner</option>
+                          </select>
+                          <button className="btn-primary" onClick={addStaff}>Add Staff</button>
+                        </div>
+                        <div className="table-wrap">
+                          <table className="table">
+                            <thead>
+                              <tr>
+                                <th>Name</th>
+                                <th>Role</th>
+                                <th>PIN</th>
+                                <th>Set PIN</th>
+                                <th>Status</th>
+                                <th>Action</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {(vendorDetail.team_access?.staff || []).map((staff) => (
+                                <tr key={staff.id}>
+                                  <td>{staff.name}</td>
+                                  <td>{staff.role}</td>
+                                  <td>{staff.pin_code || '-'}</td>
+                                  <td>
+                                    <div className="row-actions">
+                                      <input
+                                        placeholder="4-digit"
+                                        value={staffPinDraft[staff.id] || ''}
+                                        onChange={(e) =>
+                                          setStaffPinDraft((prev) => ({ ...prev, [staff.id]: e.target.value.replace(/\D/g, '').slice(0, 4) }))
+                                        }
+                                      />
+                                      <button className="btn-ghost" onClick={() => resetStaffPin(staff.id)}>Update</button>
+                                    </div>
+                                  </td>
+                                  <td>{staff.is_active ? 'active' : 'inactive'}</td>
+                                  <td>
+                                    <div className="row-actions">
+                                      <button className="btn-ghost" onClick={() => toggleStaff(staff.id, staff.is_active)}>
+                                        {staff.is_active ? 'Deactivate' : 'Activate'}
+                                      </button>
+                                      <button className="btn-ghost" onClick={() => deleteStaff(staff.id)}>Delete</button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </>
+                    )}
                   </div>
                 </div>
 
-                <div className="subsection">
-                  <h3>Team Access</h3>
-                  {!vendorDetail.team_access?.available ? (
-                    <small>Team table not available in this environment.</small>
-                  ) : (
-                    <>
-                      <div className="toolbar">
-                        <input placeholder="Staff name" value={staffName} onChange={(e) => setStaffName(e.target.value)} />
-                        <select value={staffRole} onChange={(e) => setStaffRole(e.target.value)}>
-                          <option value="staff">staff</option>
-                          <option value="manager">manager</option>
-                          <option value="owner">owner</option>
-                        </select>
-                        <button className="btn-primary" onClick={addStaff}>Add Staff</button>
-                      </div>
-                      <div className="table-wrap">
-                        <table className="table">
-                          <thead>
-                            <tr>
-                              <th>Name</th>
-                              <th>Role</th>
-                              <th>PIN</th>
-                              <th>Status</th>
-                              <th>Action</th>
+                <div>
+                  <div className="subsection">
+                    <h3>Linked Stores (Same Owner)</h3>
+                    <div className="table-wrap">
+                      <table className="table">
+                        <thead>
+                          <tr>
+                            <th>Vendor</th>
+                            <th>Cafe</th>
+                            <th>Status</th>
+                            <th>Plan</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {linkedStores.map((store) => (
+                            <tr key={store.vendor_id}>
+                              <td>#{store.vendor_id}</td>
+                              <td>{store.cafe_name}</td>
+                              <td>{store.status}</td>
+                              <td>{store.subscription?.package?.name || '-'}</td>
                             </tr>
-                          </thead>
-                          <tbody>
-                            {(vendorDetail.team_access?.staff || []).map((staff) => (
-                              <tr key={staff.id}>
-                                <td>{staff.name}</td>
-                                <td>{staff.role}</td>
-                                <td>{staff.pin_code || '-'}</td>
-                                <td>{staff.is_active ? 'active' : 'inactive'}</td>
-                                <td>
-                                  <div className="row-actions">
-                                    <button className="btn-ghost" onClick={() => toggleStaff(staff.id, staff.is_active)}>
-                                      {staff.is_active ? 'Deactivate' : 'Activate'}
-                                    </button>
-                                    <button className="btn-ghost" onClick={() => deleteStaff(staff.id)}>Delete</button>
-                                  </div>
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </>
-                  )}
+                          ))}
+                          {!linkedStores.length ? <tr><td colSpan={4}><small>No linked stores found.</small></td></tr> : null}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  <div className="subsection">
+                    <h3>Subscription History</h3>
+                    <div className="table-wrap">
+                      <table className="table">
+                        <thead>
+                          <tr>
+                            <th>Status</th>
+                            <th>Package</th>
+                            <th>Amount</th>
+                            <th>Period</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {(vendorDetail.subscriptions || []).map((sub) => (
+                            <tr key={sub.id}>
+                              <td>{sub.status}</td>
+                              <td>{sub.package?.name || sub.package?.code || '-'}</td>
+                              <td>₹{Number(sub.amount_paid || 0).toFixed(2)}</td>
+                              <td>
+                                <small>{sub.period_start ? new Date(sub.period_start).toLocaleDateString() : '-'} → {sub.period_end ? new Date(sub.period_end).toLocaleDateString() : '-'}</small>
+                              </td>
+                            </tr>
+                          ))}
+                          {!vendorDetail.subscriptions?.length ? <tr><td colSpan={4}><small>No subscription rows.</small></td></tr> : null}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
                 </div>
-              </>
+              </div>
             ) : null}
           </div>
+        </div>
+      ) : null}
 
-          <div>
-            <SectionHeader title="Subscription History" />
-            <div className="table-wrap">
-              <table className="table">
-                <thead>
-                  <tr>
-                    <th>Status</th>
-                    <th>Package</th>
-                    <th>Amount</th>
-                    <th>Period</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(vendorDetail?.subscriptions || []).map((sub) => (
-                    <tr key={sub.id}>
-                      <td>{sub.status}</td>
-                      <td>{sub.package?.name || sub.package?.code || '-'}</td>
-                      <td>{sub.amount_paid}</td>
-                      <td>
-                        <small>{sub.period_start ? new Date(sub.period_start).toLocaleDateString() : '-'} → {sub.period_end ? new Date(sub.period_end).toLocaleDateString() : '-'}</small>
-                      </td>
-                    </tr>
-                  ))}
-                  {!(vendorDetail?.subscriptions || []).length ? (
-                    <tr><td colSpan={4}><small>No subscription rows.</small></td></tr>
-                  ) : null}
-                </tbody>
-              </table>
+      {previewDoc ? (
+        <div className="overlay-backdrop" onClick={() => setPreviewDoc(null)}>
+          <div className="overlay-panel preview-overlay" onClick={(e) => e.stopPropagation()}>
+            <div className="overlay-header">
+              <div>
+                <h3>{previewDoc.type} Preview</h3>
+                <p>Inline frame preview for faster verification.</p>
+              </div>
+              <button className="btn-ghost" onClick={() => setPreviewDoc(null)}><X size={16} /> Close</button>
             </div>
+            <iframe src={previewDoc.url} title={previewDoc.type} className="preview-frame" />
           </div>
         </div>
-      ) : (
-        <small>Select a cafe row and click “View”.</small>
-      )}
+      ) : null}
     </section>
   );
 }
@@ -1502,6 +1747,111 @@ function ProductsPanel() {
   );
 }
 
+function AnalyticsPanel() {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [vendorRows, setVendorRows] = useState<VendorRow[]>([]);
+  const [subscriptionRows, setSubscriptionRows] = useState<Array<{
+    id: number;
+    vendor_id: number;
+    cafe_name: string;
+    status: string;
+    amount_paid: number;
+    package?: { code?: string; name?: string };
+  }>>([]);
+  const [settlementSummary, setSettlementSummary] = useState(emptySettlementSummary);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const [vendorsData, subscriptionsData, settlementData] = await Promise.all([
+        apiRequest<{ vendors: VendorRow[] }>('admin/vendors?page=1&per_page=300'),
+        apiRequest<{ subscriptions: Array<{
+          id: number;
+          vendor_id: number;
+          cafe_name: string;
+          status: string;
+          amount_paid: number;
+          package?: { code?: string; name?: string };
+        }> }>('admin/subscriptions?page=1&per_page=500'),
+        apiRequest<{ summary: typeof emptySettlementSummary }>(`admin/settlements/daily?date=${todayIso()}`),
+      ]);
+
+      setVendorRows(vendorsData.vendors || []);
+      setSubscriptionRows(subscriptionsData.subscriptions || []);
+      setSettlementSummary(settlementData.summary || emptySettlementSummary);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to load analytics');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const activeVendors = vendorRows.filter((vendor) => vendor.status === 'active').length;
+  const pendingVerification = vendorRows.filter((vendor) => vendor.status === 'pending_verification').length;
+  const activeSubscriptions = subscriptionRows.filter((row) => ['active', 'trialing'].includes(row.status)).length;
+  const monthlyCollectedEstimate = subscriptionRows
+    .filter((row) => ['active', 'trialing'].includes(row.status))
+    .reduce((sum, row) => sum + Number(row.amount_paid || 0), 0);
+
+  const planDistribution = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const row of subscriptionRows) {
+      const key = row.package?.name || row.package?.code || 'unassigned';
+      map.set(key, (map.get(key) || 0) + 1);
+    }
+    return Array.from(map.entries()).map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count);
+  }, [subscriptionRows]);
+
+  const topBars = planDistribution.slice(0, 5);
+  const maxBarCount = Math.max(...topBars.map((bar) => bar.count), 1);
+
+  return (
+    <section className="panel">
+      <SectionHeader
+        title="Super Admin Analytics"
+        subtitle="High-level growth, subscription adoption, and settlement visibility."
+        actions={<button className="btn-secondary" onClick={load}><RefreshCcw size={14} /> Refresh</button>}
+      />
+
+      {error ? <ErrorBanner message={error} /> : null}
+      {loading ? <LoadingRow text="Refreshing analytics..." /> : null}
+
+      <div className="stats-grid">
+        <div className="stat-card"><span>Total Cafes</span><strong>{vendorRows.length}</strong></div>
+        <div className="stat-card"><span>Active Cafes</span><strong>{activeVendors}</strong></div>
+        <div className="stat-card"><span>Pending Verification</span><strong>{pendingVerification}</strong></div>
+        <div className="stat-card"><span>Active/Trial Subscriptions</span><strong>{activeSubscriptions}</strong></div>
+        <div className="stat-card"><span>Subscription Revenue (captured)</span><strong>₹{monthlyCollectedEstimate.toFixed(2)}</strong></div>
+        <div className="stat-card"><span>Today Pending Settlements</span><strong>₹{settlementSummary.total_pending_settlement.toFixed(2)}</strong></div>
+        <div className="stat-card"><span>Today App Collected</span><strong>₹{settlementSummary.total_app_collected.toFixed(2)}</strong></div>
+        <div className="stat-card"><span>Today Settled</span><strong>₹{settlementSummary.total_already_settled.toFixed(2)}</strong></div>
+      </div>
+
+      <div className="subsection">
+        <h3>Plan Adoption</h3>
+        <div className="analytics-bars">
+          {topBars.map((bar) => (
+            <div key={bar.name} className="bar-row">
+              <div className="bar-label">{bar.name}</div>
+              <div className="bar-track">
+                <div className="bar-fill" style={{ width: `${(bar.count / maxBarCount) * 100}%` }} />
+              </div>
+              <div className="bar-value">{bar.count}</div>
+            </div>
+          ))}
+          {!topBars.length ? <small>No subscription plan data available yet.</small> : null}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function SubscriptionsPanel() {
   const [rows, setRows] = useState<Array<{
     id: number;
@@ -1516,15 +1866,30 @@ function SubscriptionsPanel() {
   }>>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [catalogMessage, setCatalogMessage] = useState('');
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('');
   const [packageCode, setPackageCode] = useState<Record<number, string>>({});
+  const [planCatalog, setPlanCatalog] = useState<PlanTier[]>(DEFAULT_PLAN_CATALOG);
+
+  useEffect(() => {
+    const stored = typeof window !== 'undefined' ? window.localStorage.getItem(PLAN_STORAGE_KEY) : null;
+    if (!stored) return;
+    try {
+      const parsed = JSON.parse(stored) as PlanTier[];
+      if (Array.isArray(parsed) && parsed.length) {
+        setPlanCatalog(parsed);
+      }
+    } catch {
+      // ignore malformed storage
+    }
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      const params = new URLSearchParams({ page: '1', per_page: '100' });
+      const params = new URLSearchParams({ page: '1', per_page: '200' });
       if (search.trim()) params.set('search', search.trim());
       if (status) params.set('status', status);
       const data = await apiRequest<{ subscriptions: typeof rows }>(`admin/subscriptions?${params.toString()}`);
@@ -1540,10 +1905,25 @@ function SubscriptionsPanel() {
     void load();
   }, [load]);
 
+  const savePlanCatalog = () => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem(PLAN_STORAGE_KEY, JSON.stringify(planCatalog));
+    setCatalogMessage('Subscription catalog saved locally for this admin session.');
+  };
+
+  const planStats = useMemo(() => {
+    const countByPlan = new Map<string, number>();
+    for (const row of rows) {
+      const code = (row.package?.code || row.package?.name || 'unassigned').toLowerCase();
+      countByPlan.set(code, (countByPlan.get(code) || 0) + 1);
+    }
+    return planCatalog.map((plan) => ({ ...plan, assigned: countByPlan.get(plan.code) || 0 }));
+  }, [rows, planCatalog]);
+
   const changePackage = async (vendorId: number) => {
     const code = (packageCode[vendorId] || '').trim().toLowerCase();
     if (!code) {
-      setError('Enter package code first (example: base, pro).');
+      setError('Select package first (base/pro/elite/early_bird).');
       return;
     }
     try {
@@ -1571,11 +1951,116 @@ function SubscriptionsPanel() {
     <section className="panel">
       <SectionHeader
         title="Subscription Management"
-        subtitle="Track package history and manage active subscription plans."
+        subtitle="Configure Base/Pro/Elite/Early Bird plans and track who bought what."
         actions={<button className="btn-secondary" onClick={load}><RefreshCcw size={14} /> Refresh</button>}
       />
 
       {error ? <ErrorBanner message={error} /> : null}
+      {catalogMessage ? <div className="success-banner">{catalogMessage}</div> : null}
+
+      <div className="subsection">
+        <h3>Hash Subscription Catalog</h3>
+        <small>
+          Suggested India benchmark range informed by SMB billing/POS pricing bands and adjusted for gaming-cafe specific realtime stack.
+        </small>
+        <div className="row-actions">
+          <a href="https://cafesynk.com/pricing-new" target="_blank" rel="noreferrer">Cafe Synk pricing benchmark</a>
+          <a href="https://www.restogro.com/pricing/" target="_blank" rel="noreferrer">Restogro annual plans</a>
+          <a href="https://mybillbook.in/s/billing-app/" target="_blank" rel="noreferrer">myBillBook SMB pricing</a>
+        </div>
+        <div className="table-wrap">
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Plan</th>
+                <th>PC Limit</th>
+                <th>Monthly (₹)</th>
+                <th>Quarterly (₹)</th>
+                <th>Yearly (₹)</th>
+                <th>Discounts</th>
+                <th>Offer / Features</th>
+                <th>Assigned Cafes</th>
+              </tr>
+            </thead>
+            <tbody>
+              {planStats.map((plan) => (
+                <tr key={plan.code}>
+                  <td>
+                    <strong>{plan.name}</strong>
+                    <br />
+                    <small>{plan.code}</small>
+                  </td>
+                  <td>
+                    <input
+                      value={plan.pc_limit}
+                      onChange={(e) => {
+                        const next = Number(e.target.value || 0);
+                        setPlanCatalog((prev) => prev.map((item) => item.code === plan.code ? { ...item, pc_limit: Math.max(0, next) } : item));
+                      }}
+                    />
+                  </td>
+                  <td>
+                    <input
+                      value={plan.monthly}
+                      onChange={(e) => {
+                        const next = Number(e.target.value || 0);
+                        setPlanCatalog((prev) => prev.map((item) => item.code === plan.code ? { ...item, monthly: Math.max(0, next) } : item));
+                      }}
+                    />
+                  </td>
+                  <td>
+                    <input
+                      value={plan.quarterly}
+                      onChange={(e) => {
+                        const next = Number(e.target.value || 0);
+                        setPlanCatalog((prev) => prev.map((item) => item.code === plan.code ? { ...item, quarterly: Math.max(0, next) } : item));
+                      }}
+                    />
+                  </td>
+                  <td>
+                    <input
+                      value={plan.yearly}
+                      onChange={(e) => {
+                        const next = Number(e.target.value || 0);
+                        setPlanCatalog((prev) => prev.map((item) => item.code === plan.code ? { ...item, yearly: Math.max(0, next) } : item));
+                      }}
+                    />
+                  </td>
+                  <td>
+                    <small>
+                      Qtr: {plan.monthly > 0 ? Math.max(0, Math.round((1 - (plan.quarterly / (plan.monthly * 3))) * 100)) : 0}% off
+                    </small>
+                    <br />
+                    <small>
+                      Yr: {plan.monthly > 0 ? Math.max(0, Math.round((1 - (plan.yearly / (plan.monthly * 12))) * 100)) : 0}% off
+                    </small>
+                  </td>
+                  <td>
+                    <small>{plan.onboarding_offer || '—'}</small>
+                    <br />
+                    <small>{plan.features.join(' • ')}</small>
+                  </td>
+                  <td><strong>{plan.assigned}</strong></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="row-actions">
+          <button className="btn-primary" onClick={savePlanCatalog}>Save Catalog Draft</button>
+          <small>Use “Change” in rows below to push selected package code to a cafe.</small>
+        </div>
+      </div>
+
+      <div className="stats-grid">
+        {planStats.map((plan) => (
+          <div className="stat-card" key={plan.code}>
+            <span>{plan.name} Adoption</span>
+            <strong>{plan.assigned}</strong>
+            <small>PC limit: {plan.pc_limit}</small>
+          </div>
+        ))}
+      </div>
 
       <div className="toolbar">
         <input placeholder="Search by cafe, owner, vendor id" value={search} onChange={(e) => setSearch(e.target.value)} />
@@ -1618,11 +2103,15 @@ function SubscriptionsPanel() {
                 </td>
                 <td>
                   <div className="row-actions">
-                    <input
-                      placeholder="package code"
+                    <select
                       value={packageCode[row.vendor_id] || ''}
                       onChange={(e) => setPackageCode((p) => ({ ...p, [row.vendor_id]: e.target.value }))}
-                    />
+                    >
+                      <option value="">select plan</option>
+                      {planCatalog.map((plan) => (
+                        <option key={plan.code} value={plan.code}>{plan.name} ({plan.code})</option>
+                      ))}
+                    </select>
                     <button className="btn-ghost" onClick={() => changePackage(row.vendor_id)}>Change</button>
                     <button className="btn-ghost" onClick={() => provisionDefault(row.vendor_id)}>Default</button>
                   </div>
@@ -1645,6 +2134,7 @@ export default function HomePage() {
     if (module === 'cafes') return <VendorsPanel />;
     if (module === 'verification') return <VendorsPanel verificationOnly />;
     if (module === 'settlements') return <SettlementsPanel />;
+    if (module === 'analytics') return <AnalyticsPanel />;
     if (module === 'collaborators') return <CollaboratorsPanel />;
     if (module === 'products') return <ProductsPanel />;
     return <SubscriptionsPanel />;
@@ -1694,7 +2184,7 @@ export default function HomePage() {
         <header className="page-topbar">
           <div>
             <h1>Super Admin Dashboard</h1>
-            <p>Onboarding, verification, payouts, collaborators, products, and subscription lifecycle in one place.</p>
+            <p>Onboarding, verification, payouts, analytics, collaborators, products, and subscription lifecycle in one place.</p>
           </div>
         </header>
 
