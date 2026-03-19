@@ -22,10 +22,12 @@ type ModuleId =
   | 'cafes'
   | 'verification'
   | 'settlements'
-  | 'analytics'
+  | 'analytics_ops'
+  | 'analytics_user'
   | 'collaborators'
   | 'products'
-  | 'subscriptions';
+  | 'subscription_models'
+  | 'cafe_subscriptions';
 
 type ApiError = { message?: string; error?: string; details?: unknown };
 
@@ -159,6 +161,7 @@ const weekDays = [
 type PlanTier = {
   code: string;
   name: string;
+  enabled: boolean;
   pc_limit: number;
   monthly: number;
   quarterly: number;
@@ -173,6 +176,7 @@ const DEFAULT_PLAN_CATALOG: PlanTier[] = [
   {
     code: 'early_bird',
     name: 'Early Bird',
+    enabled: true,
     pc_limit: 20,
     monthly: 0,
     quarterly: 0,
@@ -183,6 +187,7 @@ const DEFAULT_PLAN_CATALOG: PlanTier[] = [
   {
     code: 'base',
     name: 'Base',
+    enabled: true,
     pc_limit: 25,
     monthly: 1999,
     quarterly: 5399,
@@ -192,6 +197,7 @@ const DEFAULT_PLAN_CATALOG: PlanTier[] = [
   {
     code: 'pro',
     name: 'Pro',
+    enabled: true,
     pc_limit: 60,
     monthly: 4999,
     quarterly: 13499,
@@ -201,6 +207,7 @@ const DEFAULT_PLAN_CATALOG: PlanTier[] = [
   {
     code: 'elite',
     name: 'Elite',
+    enabled: true,
     pc_limit: 150,
     monthly: 8999,
     quarterly: 24299,
@@ -214,10 +221,12 @@ const navItems: Array<{ id: ModuleId; label: string; icon: React.ComponentType<{
   { id: 'cafes', label: 'Cafe Registry', icon: Building2 },
   { id: 'verification', label: 'Verification Desk', icon: ClipboardCheck },
   { id: 'settlements', label: 'Day-End Settlements', icon: Wallet },
-  { id: 'analytics', label: 'Analytics', icon: BarChart3 },
+  { id: 'analytics_ops', label: 'Analytics (Ops)', icon: BarChart3 },
+  { id: 'analytics_user', label: 'Analytics (Users)', icon: BarChart3 },
+  { id: 'subscription_models', label: 'Subscription Models', icon: Settings2 },
+  { id: 'cafe_subscriptions', label: 'Cafe Subscriptions', icon: Settings2 },
   { id: 'collaborators', label: 'Collaborators', icon: Handshake },
   { id: 'products', label: 'Collaborator Products', icon: Package },
-  { id: 'subscriptions', label: 'Subscriptions', icon: Settings2 },
 ];
 
 function to12h(time24: string) {
@@ -254,6 +263,40 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   }
 
   return data as T;
+}
+
+async function optionalApiRequest<T>(path: string, fallback: T): Promise<T> {
+  try {
+    return await apiRequest<T>(path);
+  } catch {
+    return fallback;
+  }
+}
+
+function usePlanCatalogState() {
+  const [planCatalog, setPlanCatalog] = useState<PlanTier[]>(DEFAULT_PLAN_CATALOG);
+  const [catalogMessage, setCatalogMessage] = useState('');
+
+  useEffect(() => {
+    const stored = typeof window !== 'undefined' ? window.localStorage.getItem(PLAN_STORAGE_KEY) : null;
+    if (!stored) return;
+    try {
+      const parsed = JSON.parse(stored) as PlanTier[];
+      if (Array.isArray(parsed) && parsed.length) {
+        setPlanCatalog(parsed);
+      }
+    } catch {
+      // ignore malformed storage
+    }
+  }, []);
+
+  const savePlanCatalog = useCallback(() => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem(PLAN_STORAGE_KEY, JSON.stringify(planCatalog));
+    setCatalogMessage('Subscription catalog saved.');
+  }, [planCatalog]);
+
+  return { planCatalog, setPlanCatalog, catalogMessage, savePlanCatalog };
 }
 
 function ErrorBanner({ message }: { message: string }) {
@@ -734,6 +777,39 @@ function VendorsPanel({ verificationOnly = false }: { verificationOnly?: boolean
     }
   };
 
+  const notifyAndDeactivate = async (vendor: VendorRow) => {
+    const subject = `Hash For Gamers: Cafe Status Update for ${vendor.cafe_name}`;
+    const body = [
+      `Hello ${vendor.owner_name || 'Partner'},`,
+      '',
+      `Your cafe (${vendor.cafe_name}) is being marked inactive on Hash For Gamers.`,
+      '',
+      'What you lose while inactive:',
+      '- Visibility on Hash consumer app',
+      '- New app-origin bookings',
+      '- Access to active subscription benefits',
+      '- Real-time campaign and discovery traffic',
+      '',
+      'To reactivate, please resolve pending compliance/subscription requirements and contact support.',
+      '',
+      'Thanks,',
+      'Hash For Gamers Ops'
+    ].join('\n');
+
+    await optionalApiRequest(
+      `admin/vendors/${vendor.vendor_id}/notifications/deactivation`,
+      {}
+    );
+    await updateStatus(vendor.vendor_id, 'inactive');
+
+    if (vendor.email) {
+      const mailto = `mailto:${encodeURIComponent(vendor.email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+      if (typeof window !== 'undefined') {
+        window.open(mailto, '_blank', 'noopener,noreferrer');
+      }
+    }
+  };
+
   const verifyDocs = async (statusValue: 'verified' | 'rejected' | 'unverified') => {
     if (!selectedVendorId || !selectedDocIds.length) return;
     try {
@@ -985,7 +1061,7 @@ function VendorsPanel({ verificationOnly = false }: { verificationOnly?: boolean
                   <div className="row-actions">
                     <button className="btn-ghost" onClick={() => openDetail(v.vendor_id)}>View</button>
                     <button className="btn-ghost" onClick={() => updateStatus(v.vendor_id, 'active')}>Activate</button>
-                    <button className="btn-ghost" onClick={() => updateStatus(v.vendor_id, 'inactive')}>Inactivate</button>
+                    <button className="btn-ghost" onClick={() => notifyAndDeactivate(v)}>Notify + Deactivate</button>
                   </div>
                 </td>
               </tr>
@@ -1747,7 +1823,7 @@ function ProductsPanel() {
   );
 }
 
-function AnalyticsPanel() {
+function AnalyticsPanel({ userCentric = false }: { userCentric?: boolean }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [vendorRows, setVendorRows] = useState<VendorRow[]>([]);
@@ -1760,12 +1836,39 @@ function AnalyticsPanel() {
     package?: { code?: string; name?: string };
   }>>([]);
   const [settlementSummary, setSettlementSummary] = useState(emptySettlementSummary);
+  const [channelRows, setChannelRows] = useState<Array<{
+    channel: string;
+    bookings: number;
+    revenue: number;
+    app_revenue: number;
+    dashboard_revenue: number;
+    pay_at_cafe_pending: number;
+    pay_at_cafe_completed: number;
+    status_breakdown?: Record<string, number>;
+    payment_mode_breakdown?: Record<string, number>;
+    booking_type_breakdown?: Record<string, number>;
+    new_users?: number;
+    conversions?: number;
+    avg_time_to_book_min?: number;
+  }>>([]);
+  const [recentVendorBookings, setRecentVendorBookings] = useState<Array<{
+    vendor_id: number;
+    cafe_name: string;
+    channel: string;
+    booking_count: number;
+    amount: number;
+  }>>([]);
+  const [vendorFirstSeenChannel, setVendorFirstSeenChannel] = useState<Array<{
+    vendor_id: number;
+    cafe_name: string;
+    first_seen_channel: string;
+  }>>([]);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      const [vendorsData, subscriptionsData, settlementData] = await Promise.all([
+      const [vendorsData, subscriptionsData, settlementData, channelData, recentData, firstSeenData] = await Promise.all([
         apiRequest<{ vendors: VendorRow[] }>('admin/vendors?page=1&per_page=300'),
         apiRequest<{ subscriptions: Array<{
           id: number;
@@ -1776,11 +1879,17 @@ function AnalyticsPanel() {
           package?: { code?: string; name?: string };
         }> }>('admin/subscriptions?page=1&per_page=500'),
         apiRequest<{ summary: typeof emptySettlementSummary }>(`admin/settlements/daily?date=${todayIso()}`),
+        optionalApiRequest<{ rows: typeof channelRows }>(`admin/analytics/channel-overview?date=${todayIso()}`, { rows: [] }),
+        optionalApiRequest<{ rows: typeof recentVendorBookings }>(`admin/analytics/recent-bookings-by-vendor?date=${todayIso()}`, { rows: [] }),
+        optionalApiRequest<{ rows: typeof vendorFirstSeenChannel }>('admin/analytics/vendor-first-seen-channel', { rows: [] }),
       ]);
 
       setVendorRows(vendorsData.vendors || []);
       setSubscriptionRows(subscriptionsData.subscriptions || []);
       setSettlementSummary(settlementData.summary || emptySettlementSummary);
+      setChannelRows(channelData.rows || []);
+      setRecentVendorBookings(recentData.rows || []);
+      setVendorFirstSeenChannel(firstSeenData.rows || []);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load analytics');
     } finally {
@@ -1795,7 +1904,7 @@ function AnalyticsPanel() {
   const activeVendors = vendorRows.filter((vendor) => vendor.status === 'active').length;
   const pendingVerification = vendorRows.filter((vendor) => vendor.status === 'pending_verification').length;
   const activeSubscriptions = subscriptionRows.filter((row) => ['active', 'trialing'].includes(row.status)).length;
-  const monthlyCollectedEstimate = subscriptionRows
+  const subscriptionCollected = subscriptionRows
     .filter((row) => ['active', 'trialing'].includes(row.status))
     .reduce((sum, row) => sum + Number(row.amount_paid || 0), 0);
 
@@ -1811,48 +1920,192 @@ function AnalyticsPanel() {
   const topBars = planDistribution.slice(0, 5);
   const maxBarCount = Math.max(...topBars.map((bar) => bar.count), 1);
 
+  const channelSummary = useMemo(() => {
+    return channelRows.reduce(
+      (acc, row) => {
+        acc.bookings += Number(row.bookings || 0);
+        acc.appRevenue += Number(row.app_revenue || 0);
+        acc.dashboardRevenue += Number(row.dashboard_revenue || 0);
+        acc.payAtCafePending += Number(row.pay_at_cafe_pending || 0);
+        acc.payAtCafeCompleted += Number(row.pay_at_cafe_completed || 0);
+        acc.newUsers += Number(row.new_users || 0);
+        acc.conversions += Number(row.conversions || 0);
+        return acc;
+      },
+      { bookings: 0, appRevenue: 0, dashboardRevenue: 0, payAtCafePending: 0, payAtCafeCompleted: 0, newUsers: 0, conversions: 0 }
+    );
+  }, [channelRows]);
+
+  const conversionRate = channelSummary.newUsers > 0
+    ? (channelSummary.conversions / channelSummary.newUsers) * 100
+    : 0;
+
   return (
     <section className="panel">
       <SectionHeader
-        title="Super Admin Analytics"
-        subtitle="High-level growth, subscription adoption, and settlement visibility."
+        title={userCentric ? 'User & Channel Analytics' : 'Operations Analytics'}
+        subtitle={userCentric
+          ? 'New users, conversion, time-to-book, and channel-level performance.'
+          : 'Daily channel overview, booking/revenue breakdown, pay-at-cafe pipeline, and vendor operations.'}
         actions={<button className="btn-secondary" onClick={load}><RefreshCcw size={14} /> Refresh</button>}
       />
 
       {error ? <ErrorBanner message={error} /> : null}
       {loading ? <LoadingRow text="Refreshing analytics..." /> : null}
+      {!channelRows.length ? <div className="info-banner">Channel analytics API not wired yet. UI is ready for `admin/analytics/*` endpoints.</div> : null}
 
-      <div className="stats-grid">
-        <div className="stat-card"><span>Total Cafes</span><strong>{vendorRows.length}</strong></div>
-        <div className="stat-card"><span>Active Cafes</span><strong>{activeVendors}</strong></div>
-        <div className="stat-card"><span>Pending Verification</span><strong>{pendingVerification}</strong></div>
-        <div className="stat-card"><span>Active/Trial Subscriptions</span><strong>{activeSubscriptions}</strong></div>
-        <div className="stat-card"><span>Subscription Revenue (captured)</span><strong>₹{monthlyCollectedEstimate.toFixed(2)}</strong></div>
-        <div className="stat-card"><span>Today Pending Settlements</span><strong>₹{settlementSummary.total_pending_settlement.toFixed(2)}</strong></div>
-        <div className="stat-card"><span>Today App Collected</span><strong>₹{settlementSummary.total_app_collected.toFixed(2)}</strong></div>
-        <div className="stat-card"><span>Today Settled</span><strong>₹{settlementSummary.total_already_settled.toFixed(2)}</strong></div>
-      </div>
+      {!userCentric ? (
+        <>
+          <div className="stats-grid">
+            <div className="stat-card"><span>Total Cafes</span><strong>{vendorRows.length}</strong></div>
+            <div className="stat-card"><span>Active Cafes</span><strong>{activeVendors}</strong></div>
+            <div className="stat-card"><span>Pending Verification</span><strong>{pendingVerification}</strong></div>
+            <div className="stat-card"><span>Active/Trial Subscriptions</span><strong>{activeSubscriptions}</strong></div>
+            <div className="stat-card"><span>App vs Dashboard Revenue</span><strong>₹{channelSummary.appRevenue.toFixed(2)} / ₹{channelSummary.dashboardRevenue.toFixed(2)}</strong></div>
+            <div className="stat-card"><span>Pay-at-Cafe Health</span><strong>{channelSummary.payAtCafeCompleted} done / {channelSummary.payAtCafePending} pending</strong></div>
+            <div className="stat-card"><span>Today Pending Settlements</span><strong>₹{settlementSummary.total_pending_settlement.toFixed(2)}</strong></div>
+            <div className="stat-card"><span>Subscription Revenue (captured)</span><strong>₹{subscriptionCollected.toFixed(2)}</strong></div>
+          </div>
 
-      <div className="subsection">
-        <h3>Plan Adoption</h3>
-        <div className="analytics-bars">
-          {topBars.map((bar) => (
-            <div key={bar.name} className="bar-row">
-              <div className="bar-label">{bar.name}</div>
-              <div className="bar-track">
-                <div className="bar-fill" style={{ width: `${(bar.count / maxBarCount) * 100}%` }} />
-              </div>
-              <div className="bar-value">{bar.count}</div>
+          <div className="subsection">
+            <h3>Daily Channel Overview</h3>
+            <div className="table-wrap">
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>Channel</th>
+                    <th>Bookings</th>
+                    <th>Revenue</th>
+                    <th>Payment Modes</th>
+                    <th>Booking Types</th>
+                    <th>Status by Channel</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {channelRows.map((row) => (
+                    <tr key={row.channel}>
+                      <td>{row.channel}</td>
+                      <td>{row.bookings}</td>
+                      <td>₹{Number(row.revenue || 0).toFixed(2)}</td>
+                      <td><small>{Object.entries(row.payment_mode_breakdown || {}).map(([k, v]) => `${k}:${v}`).join(' · ') || '-'}</small></td>
+                      <td><small>{Object.entries(row.booking_type_breakdown || {}).map(([k, v]) => `${k}:${v}`).join(' · ') || '-'}</small></td>
+                      <td><small>{Object.entries(row.status_breakdown || {}).map(([k, v]) => `${k}:${v}`).join(' · ') || '-'}</small></td>
+                    </tr>
+                  ))}
+                  {!channelRows.length ? <tr><td colSpan={6}><small>No channel rows yet.</small></td></tr> : null}
+                </tbody>
+              </table>
             </div>
-          ))}
-          {!topBars.length ? <small>No subscription plan data available yet.</small> : null}
-        </div>
-      </div>
+          </div>
+
+          <div className="subsection">
+            <h3>Vendor Daily by Channel / Recent Bookings Grouped by Vendor</h3>
+            <div className="table-wrap">
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>Vendor</th>
+                    <th>Channel</th>
+                    <th>Booking Count</th>
+                    <th>Amount</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {recentVendorBookings.map((row) => (
+                    <tr key={`${row.vendor_id}-${row.channel}`}>
+                      <td>#{row.vendor_id} · {row.cafe_name}</td>
+                      <td>{row.channel}</td>
+                      <td>{row.booking_count}</td>
+                      <td>₹{Number(row.amount || 0).toFixed(2)}</td>
+                    </tr>
+                  ))}
+                  {!recentVendorBookings.length ? <tr><td colSpan={4}><small>No grouped bookings rows yet.</small></td></tr> : null}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div className="subsection">
+            <h3>Vendor First Seen Channel</h3>
+            <div className="table-wrap">
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>Vendor</th>
+                    <th>First Seen Channel</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {vendorFirstSeenChannel.map((row) => (
+                    <tr key={`${row.vendor_id}-${row.first_seen_channel}`}>
+                      <td>#{row.vendor_id} · {row.cafe_name}</td>
+                      <td>{row.first_seen_channel}</td>
+                    </tr>
+                  ))}
+                  {!vendorFirstSeenChannel.length ? <tr><td colSpan={2}><small>No first-seen data yet.</small></td></tr> : null}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div className="subsection">
+            <h3>Plan Adoption</h3>
+            <div className="analytics-bars">
+              {topBars.map((bar) => (
+                <div key={bar.name} className="bar-row">
+                  <div className="bar-label">{bar.name}</div>
+                  <div className="bar-track">
+                    <div className="bar-fill" style={{ width: `${(bar.count / maxBarCount) * 100}%` }} />
+                  </div>
+                  <div className="bar-value">{bar.count}</div>
+                </div>
+              ))}
+              {!topBars.length ? <small>No subscription plan data available yet.</small> : null}
+            </div>
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="stats-grid">
+            <div className="stat-card"><span>New Users (Channel)</span><strong>{channelSummary.newUsers}</strong></div>
+            <div className="stat-card"><span>Conversions</span><strong>{channelSummary.conversions}</strong></div>
+            <div className="stat-card"><span>Conversion Rate</span><strong>{conversionRate.toFixed(1)}%</strong></div>
+            <div className="stat-card"><span>Avg Time to Book</span><strong>{channelRows.length ? (channelRows.reduce((sum, row) => sum + Number(row.avg_time_to_book_min || 0), 0) / channelRows.length).toFixed(1) : '0'} min</strong></div>
+          </div>
+
+          <div className="subsection">
+            <h3>Booking Status by Channel</h3>
+            <div className="table-wrap">
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>Channel</th>
+                    <th>Bookings</th>
+                    <th>Status Mix</th>
+                    <th>Revenue (App / Dashboard)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {channelRows.map((row) => (
+                    <tr key={`user-${row.channel}`}>
+                      <td>{row.channel}</td>
+                      <td>{row.bookings}</td>
+                      <td><small>{Object.entries(row.status_breakdown || {}).map(([k, v]) => `${k}:${v}`).join(' · ') || '-'}</small></td>
+                      <td>₹{Number(row.app_revenue || 0).toFixed(2)} / ₹{Number(row.dashboard_revenue || 0).toFixed(2)}</td>
+                    </tr>
+                  ))}
+                  {!channelRows.length ? <tr><td colSpan={4}><small>No channel data yet.</small></td></tr> : null}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
+      )}
     </section>
   );
 }
 
-function SubscriptionsPanel() {
+function SubscriptionsPanel({ modelsOnly = false }: { modelsOnly?: boolean }) {
   const [rows, setRows] = useState<Array<{
     id: number;
     vendor_id: number;
@@ -1866,30 +2119,17 @@ function SubscriptionsPanel() {
   }>>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [catalogMessage, setCatalogMessage] = useState('');
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('');
   const [packageCode, setPackageCode] = useState<Record<number, string>>({});
-  const [planCatalog, setPlanCatalog] = useState<PlanTier[]>(DEFAULT_PLAN_CATALOG);
-
-  useEffect(() => {
-    const stored = typeof window !== 'undefined' ? window.localStorage.getItem(PLAN_STORAGE_KEY) : null;
-    if (!stored) return;
-    try {
-      const parsed = JSON.parse(stored) as PlanTier[];
-      if (Array.isArray(parsed) && parsed.length) {
-        setPlanCatalog(parsed);
-      }
-    } catch {
-      // ignore malformed storage
-    }
-  }, []);
+  const [historyVendorId, setHistoryVendorId] = useState<number | null>(null);
+  const { planCatalog, setPlanCatalog, catalogMessage, savePlanCatalog } = usePlanCatalogState();
 
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      const params = new URLSearchParams({ page: '1', per_page: '200' });
+      const params = new URLSearchParams({ page: '1', per_page: '500' });
       if (search.trim()) params.set('search', search.trim());
       if (status) params.set('status', status);
       const data = await apiRequest<{ subscriptions: typeof rows }>(`admin/subscriptions?${params.toString()}`);
@@ -1905,25 +2145,45 @@ function SubscriptionsPanel() {
     void load();
   }, [load]);
 
-  const savePlanCatalog = () => {
-    if (typeof window === 'undefined') return;
-    window.localStorage.setItem(PLAN_STORAGE_KEY, JSON.stringify(planCatalog));
-    setCatalogMessage('Subscription catalog saved locally for this admin session.');
-  };
+  const enabledPlans = planCatalog.filter((plan) => plan.enabled);
+
+  const groupedByVendor = useMemo(() => {
+    const map = new Map<number, { current: (typeof rows)[number]; history: (typeof rows) }>();
+    for (const row of rows) {
+      const existing = map.get(row.vendor_id);
+      if (!existing) {
+        map.set(row.vendor_id, { current: row, history: [row] });
+        continue;
+      }
+      existing.history.push(row);
+      const existingTime = new Date(existing.current.period_end || existing.current.period_start || 0).getTime();
+      const rowTime = new Date(row.period_end || row.period_start || 0).getTime();
+      const currentIsLessRelevant = existing.current.status !== 'active' && row.status === 'active';
+      if (currentIsLessRelevant || rowTime > existingTime || row.id > existing.current.id) {
+        existing.current = row;
+      }
+    }
+    return Array.from(map.values());
+  }, [rows]);
+
+  const selectedHistory = useMemo(
+    () => groupedByVendor.find((item) => item.current.vendor_id === historyVendorId)?.history || [],
+    [groupedByVendor, historyVendorId]
+  );
 
   const planStats = useMemo(() => {
     const countByPlan = new Map<string, number>();
-    for (const row of rows) {
-      const code = (row.package?.code || row.package?.name || 'unassigned').toLowerCase();
+    for (const row of groupedByVendor) {
+      const code = (row.current.package?.code || row.current.package?.name || 'unassigned').toLowerCase();
       countByPlan.set(code, (countByPlan.get(code) || 0) + 1);
     }
     return planCatalog.map((plan) => ({ ...plan, assigned: countByPlan.get(plan.code) || 0 }));
-  }, [rows, planCatalog]);
+  }, [groupedByVendor, planCatalog]);
 
   const changePackage = async (vendorId: number) => {
     const code = (packageCode[vendorId] || '').trim().toLowerCase();
     if (!code) {
-      setError('Select package first (base/pro/elite/early_bird).');
+      setError('Select package first.');
       return;
     }
     try {
@@ -1950,178 +2210,170 @@ function SubscriptionsPanel() {
   return (
     <section className="panel">
       <SectionHeader
-        title="Subscription Management"
-        subtitle="Configure Base/Pro/Elite/Early Bird plans and track who bought what."
+        title={modelsOnly ? 'Subscription Models' : 'Cafe Subscriptions'}
+        subtitle={modelsOnly
+          ? 'Define what plans are offered globally (including Early Bird toggle).'
+          : 'One row per cafe/owner with current subscription + quick history access.'}
         actions={<button className="btn-secondary" onClick={load}><RefreshCcw size={14} /> Refresh</button>}
       />
 
       {error ? <ErrorBanner message={error} /> : null}
       {catalogMessage ? <div className="success-banner">{catalogMessage}</div> : null}
 
-      <div className="subsection">
-        <h3>Hash Subscription Catalog</h3>
-        <small>
-          Suggested India benchmark range informed by SMB billing/POS pricing bands and adjusted for gaming-cafe specific realtime stack.
-        </small>
-        <div className="row-actions">
-          <a href="https://cafesynk.com/pricing-new" target="_blank" rel="noreferrer">Cafe Synk pricing benchmark</a>
-          <a href="https://www.restogro.com/pricing/" target="_blank" rel="noreferrer">Restogro annual plans</a>
-          <a href="https://mybillbook.in/s/billing-app/" target="_blank" rel="noreferrer">myBillBook SMB pricing</a>
-        </div>
-        <div className="table-wrap">
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Plan</th>
-                <th>PC Limit</th>
-                <th>Monthly (₹)</th>
-                <th>Quarterly (₹)</th>
-                <th>Yearly (₹)</th>
-                <th>Discounts</th>
-                <th>Offer / Features</th>
-                <th>Assigned Cafes</th>
-              </tr>
-            </thead>
-            <tbody>
-              {planStats.map((plan) => (
-                <tr key={plan.code}>
-                  <td>
-                    <strong>{plan.name}</strong>
-                    <br />
-                    <small>{plan.code}</small>
-                  </td>
-                  <td>
-                    <input
-                      value={plan.pc_limit}
-                      onChange={(e) => {
-                        const next = Number(e.target.value || 0);
-                        setPlanCatalog((prev) => prev.map((item) => item.code === plan.code ? { ...item, pc_limit: Math.max(0, next) } : item));
-                      }}
-                    />
-                  </td>
-                  <td>
-                    <input
-                      value={plan.monthly}
-                      onChange={(e) => {
-                        const next = Number(e.target.value || 0);
-                        setPlanCatalog((prev) => prev.map((item) => item.code === plan.code ? { ...item, monthly: Math.max(0, next) } : item));
-                      }}
-                    />
-                  </td>
-                  <td>
-                    <input
-                      value={plan.quarterly}
-                      onChange={(e) => {
-                        const next = Number(e.target.value || 0);
-                        setPlanCatalog((prev) => prev.map((item) => item.code === plan.code ? { ...item, quarterly: Math.max(0, next) } : item));
-                      }}
-                    />
-                  </td>
-                  <td>
-                    <input
-                      value={plan.yearly}
-                      onChange={(e) => {
-                        const next = Number(e.target.value || 0);
-                        setPlanCatalog((prev) => prev.map((item) => item.code === plan.code ? { ...item, yearly: Math.max(0, next) } : item));
-                      }}
-                    />
-                  </td>
-                  <td>
-                    <small>
-                      Qtr: {plan.monthly > 0 ? Math.max(0, Math.round((1 - (plan.quarterly / (plan.monthly * 3))) * 100)) : 0}% off
-                    </small>
-                    <br />
-                    <small>
-                      Yr: {plan.monthly > 0 ? Math.max(0, Math.round((1 - (plan.yearly / (plan.monthly * 12))) * 100)) : 0}% off
-                    </small>
-                  </td>
-                  <td>
-                    <small>{plan.onboarding_offer || '—'}</small>
-                    <br />
-                    <small>{plan.features.join(' • ')}</small>
-                  </td>
-                  <td><strong>{plan.assigned}</strong></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <div className="row-actions">
-          <button className="btn-primary" onClick={savePlanCatalog}>Save Catalog Draft</button>
-          <small>Use “Change” in rows below to push selected package code to a cafe.</small>
-        </div>
-      </div>
-
-      <div className="stats-grid">
-        {planStats.map((plan) => (
-          <div className="stat-card" key={plan.code}>
-            <span>{plan.name} Adoption</span>
-            <strong>{plan.assigned}</strong>
-            <small>PC limit: {plan.pc_limit}</small>
+      {modelsOnly ? (
+        <>
+          <div className="subsection">
+            <h3>Hash Subscription Catalog</h3>
+            <small>
+              Suggested India benchmark range informed by SMB billing/POS pricing bands and adjusted for gaming-cafe specific realtime stack.
+            </small>
+            <div className="row-actions">
+              <a href="https://cafesynk.com/pricing-new" target="_blank" rel="noreferrer">Cafe Synk pricing benchmark</a>
+              <a href="https://www.restogro.com/pricing/" target="_blank" rel="noreferrer">Restogro annual plans</a>
+              <a href="https://mybillbook.in/s/billing-app/" target="_blank" rel="noreferrer">myBillBook SMB pricing</a>
+            </div>
+            <div className="table-wrap">
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>Plan</th>
+                    <th>Enabled</th>
+                    <th>PC Limit</th>
+                    <th>Monthly (₹)</th>
+                    <th>Quarterly (₹)</th>
+                    <th>Yearly (₹)</th>
+                    <th>Discounts</th>
+                    <th>Offer / Features</th>
+                    <th>Assigned Cafes</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {planStats.map((plan) => (
+                    <tr key={plan.code}>
+                      <td>
+                        <strong>{plan.name}</strong>
+                        <br />
+                        <small>{plan.code}</small>
+                      </td>
+                      <td>
+                        <input
+                          type="checkbox"
+                          checked={plan.enabled}
+                          onChange={(e) => {
+                            setPlanCatalog((prev) => prev.map((item) => item.code === plan.code ? { ...item, enabled: e.target.checked } : item));
+                          }}
+                        />
+                      </td>
+                      <td><input value={plan.pc_limit} onChange={(e) => setPlanCatalog((prev) => prev.map((item) => item.code === plan.code ? { ...item, pc_limit: Math.max(0, Number(e.target.value || 0)) } : item))} /></td>
+                      <td><input value={plan.monthly} onChange={(e) => setPlanCatalog((prev) => prev.map((item) => item.code === plan.code ? { ...item, monthly: Math.max(0, Number(e.target.value || 0)) } : item))} /></td>
+                      <td><input value={plan.quarterly} onChange={(e) => setPlanCatalog((prev) => prev.map((item) => item.code === plan.code ? { ...item, quarterly: Math.max(0, Number(e.target.value || 0)) } : item))} /></td>
+                      <td><input value={plan.yearly} onChange={(e) => setPlanCatalog((prev) => prev.map((item) => item.code === plan.code ? { ...item, yearly: Math.max(0, Number(e.target.value || 0)) } : item))} /></td>
+                      <td>
+                        <small>Qtr: {plan.monthly > 0 ? Math.max(0, Math.round((1 - (plan.quarterly / (plan.monthly * 3))) * 100)) : 0}% off</small>
+                        <br />
+                        <small>Yr: {plan.monthly > 0 ? Math.max(0, Math.round((1 - (plan.yearly / (plan.monthly * 12))) * 100)) : 0}% off</small>
+                      </td>
+                      <td><small>{plan.onboarding_offer || '—'}</small><br /><small>{plan.features.join(' • ')}</small></td>
+                      <td><strong>{plan.assigned}</strong></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="row-actions">
+              <button className="btn-primary" onClick={savePlanCatalog}>Save Subscription Models</button>
+              <small>Disable Early Bird anytime using the Enabled toggle.</small>
+            </div>
           </div>
-        ))}
-      </div>
+        </>
+      ) : (
+        <>
+          <div className="toolbar">
+            <input placeholder="Search by cafe, owner, vendor id" value={search} onChange={(e) => setSearch(e.target.value)} />
+            <select value={status} onChange={(e) => setStatus(e.target.value)}>
+              <option value="">All statuses</option>
+              <option value="active">active</option>
+              <option value="trialing">trialing</option>
+              <option value="past_due">past_due</option>
+              <option value="expired">expired</option>
+              <option value="canceled">canceled</option>
+            </select>
+            <button className="btn-primary" onClick={load}>Apply</button>
+          </div>
 
-      <div className="toolbar">
-        <input placeholder="Search by cafe, owner, vendor id" value={search} onChange={(e) => setSearch(e.target.value)} />
-        <select value={status} onChange={(e) => setStatus(e.target.value)}>
-          <option value="">All statuses</option>
-          <option value="active">active</option>
-          <option value="trialing">trialing</option>
-          <option value="past_due">past_due</option>
-          <option value="expired">expired</option>
-          <option value="canceled">canceled</option>
-        </select>
-        <button className="btn-primary" onClick={load}>Apply</button>
-      </div>
+          {loading ? <LoadingRow text="Loading subscriptions..." /> : null}
 
-      {loading ? <LoadingRow text="Loading subscription inventory..." /> : null}
+          <div className="table-wrap">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Vendor</th>
+                  <th>Owner</th>
+                  <th>Current Status</th>
+                  <th>Current Plan</th>
+                  <th>Amount</th>
+                  <th>Period</th>
+                  <th>History</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {groupedByVendor.map(({ current, history }) => (
+                  <tr key={current.vendor_id}>
+                    <td>#{current.vendor_id} · {current.cafe_name}</td>
+                    <td>{current.owner_name || '-'}</td>
+                    <td>{current.status}</td>
+                    <td>{current.package?.name || current.package?.code || '-'}</td>
+                    <td>₹{Number(current.amount_paid || 0).toFixed(2)}</td>
+                    <td><small>{current.period_start ? new Date(current.period_start).toLocaleDateString() : '-'} → {current.period_end ? new Date(current.period_end).toLocaleDateString() : '-'}</small></td>
+                    <td><button className="btn-ghost" onClick={() => setHistoryVendorId(current.vendor_id)}>View ({history.length})</button></td>
+                    <td>
+                      <div className="row-actions">
+                        <select value={packageCode[current.vendor_id] || ''} onChange={(e) => setPackageCode((p) => ({ ...p, [current.vendor_id]: e.target.value }))}>
+                          <option value="">select plan</option>
+                          {enabledPlans.map((plan) => <option key={plan.code} value={plan.code}>{plan.name}</option>)}
+                        </select>
+                        <button className="btn-ghost" onClick={() => changePackage(current.vendor_id)}>Change</button>
+                        <button className="btn-ghost" onClick={() => provisionDefault(current.vendor_id)}>Default</button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+                {!groupedByVendor.length && !loading ? <tr><td colSpan={8}><small>No cafes found.</small></td></tr> : null}
+              </tbody>
+            </table>
+          </div>
 
-      <div className="table-wrap">
-        <table className="table">
-          <thead>
-            <tr>
-              <th>Vendor</th>
-              <th>Status</th>
-              <th>Package</th>
-              <th>Amount</th>
-              <th>Period</th>
-              <th>Action</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row) => (
-              <tr key={row.id}>
-                <td>#{row.vendor_id} · {row.cafe_name}</td>
-                <td>{row.status}</td>
-                <td>{row.package?.name || row.package?.code || '-'}</td>
-                <td>₹{Number(row.amount_paid || 0).toFixed(2)}</td>
-                <td>
-                  <small>
-                    {row.period_start ? new Date(row.period_start).toLocaleDateString() : '-'} → {row.period_end ? new Date(row.period_end).toLocaleDateString() : '-'}
-                  </small>
-                </td>
-                <td>
-                  <div className="row-actions">
-                    <select
-                      value={packageCode[row.vendor_id] || ''}
-                      onChange={(e) => setPackageCode((p) => ({ ...p, [row.vendor_id]: e.target.value }))}
-                    >
-                      <option value="">select plan</option>
-                      {planCatalog.map((plan) => (
-                        <option key={plan.code} value={plan.code}>{plan.name} ({plan.code})</option>
-                      ))}
-                    </select>
-                    <button className="btn-ghost" onClick={() => changePackage(row.vendor_id)}>Change</button>
-                    <button className="btn-ghost" onClick={() => provisionDefault(row.vendor_id)}>Default</button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-            {!rows.length && !loading ? <tr><td colSpan={6}><small>No subscriptions found.</small></td></tr> : null}
-          </tbody>
-        </table>
-      </div>
+          {historyVendorId ? (
+            <div className="subsection">
+              <h3>Subscription History · Vendor #{historyVendorId}</h3>
+              <div className="table-wrap">
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>Status</th>
+                      <th>Package</th>
+                      <th>Amount</th>
+                      <th>Period</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {selectedHistory.map((row) => (
+                      <tr key={row.id}>
+                        <td>{row.status}</td>
+                        <td>{row.package?.name || row.package?.code || '-'}</td>
+                        <td>₹{Number(row.amount_paid || 0).toFixed(2)}</td>
+                        <td><small>{row.period_start ? new Date(row.period_start).toLocaleDateString() : '-'} → {row.period_end ? new Date(row.period_end).toLocaleDateString() : '-'}</small></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <button className="btn-ghost" onClick={() => setHistoryVendorId(null)}>Close History</button>
+            </div>
+          ) : null}
+        </>
+      )}
     </section>
   );
 }
@@ -2134,10 +2386,13 @@ export default function HomePage() {
     if (module === 'cafes') return <VendorsPanel />;
     if (module === 'verification') return <VendorsPanel verificationOnly />;
     if (module === 'settlements') return <SettlementsPanel />;
-    if (module === 'analytics') return <AnalyticsPanel />;
+    if (module === 'analytics_ops') return <AnalyticsPanel />;
+    if (module === 'analytics_user') return <AnalyticsPanel userCentric />;
+    if (module === 'subscription_models') return <SubscriptionsPanel modelsOnly />;
+    if (module === 'cafe_subscriptions') return <SubscriptionsPanel />;
     if (module === 'collaborators') return <CollaboratorsPanel />;
     if (module === 'products') return <ProductsPanel />;
-    return <SubscriptionsPanel />;
+    return <OnboardPanel />;
   }, [module]);
 
   return (
