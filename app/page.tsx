@@ -47,6 +47,8 @@ type VendorRow = {
   subscription?: {
     status: string;
     is_active: boolean;
+    inactive_for_days?: number | null;
+    inactive_over_90_days?: boolean;
     package?: { name?: string; code?: string; pc_limit?: number } | null;
     amount_paid?: number;
     period_end?: string | null;
@@ -60,6 +62,10 @@ type VendorRow = {
     };
   };
   team_access?: { total: number; active: number };
+  deactivation_notifications?: {
+    sent_count: number;
+    last_sent_at?: string | null;
+  };
 };
 
 type VendorDetail = {
@@ -174,7 +180,7 @@ const PLAN_STORAGE_KEY = 'hash_superadmin_plan_catalog_v1';
 
 const DEFAULT_PLAN_CATALOG: PlanTier[] = [
   {
-    code: 'early_bird',
+    code: 'early_onboard',
     name: 'Early Bird',
     enabled: true,
     pc_limit: 20,
@@ -276,27 +282,96 @@ async function optionalApiRequest<T>(path: string, fallback: T): Promise<T> {
 function usePlanCatalogState() {
   const [planCatalog, setPlanCatalog] = useState<PlanTier[]>(DEFAULT_PLAN_CATALOG);
   const [catalogMessage, setCatalogMessage] = useState('');
+  const [catalogLoading, setCatalogLoading] = useState(false);
 
   useEffect(() => {
-    const stored = typeof window !== 'undefined' ? window.localStorage.getItem(PLAN_STORAGE_KEY) : null;
-    if (!stored) return;
-    try {
-      const parsed = JSON.parse(stored) as PlanTier[];
-      if (Array.isArray(parsed) && parsed.length) {
-        setPlanCatalog(parsed);
+    let active = true;
+    setCatalogLoading(true);
+    const load = async () => {
+      try {
+        const payload = await apiRequest<{ models: Array<Record<string, unknown>> }>('admin/subscription-models');
+        const mapped = (payload.models || [])
+          .map((item) => ({
+            code: String(item.code || '').toLowerCase(),
+            name: String(item.name || ''),
+            enabled: Boolean(item.active ?? item.enabled ?? true),
+            pc_limit: Number(item.pc_limit || 0),
+            monthly: Number(item.monthly || 0),
+            quarterly: Number(item.quarterly || 0),
+            yearly: Number(item.yearly || 0),
+            onboarding_offer: String(item.onboarding_offer || ''),
+            features: Array.isArray(item.plan_features || item.features) ? (item.plan_features || item.features) as string[] : [],
+          }))
+          .filter((item) => Boolean(item.code && item.name));
+        if (active && mapped.length) {
+          setPlanCatalog(mapped);
+          if (typeof window !== 'undefined') {
+            window.localStorage.setItem(PLAN_STORAGE_KEY, JSON.stringify(mapped));
+          }
+          setCatalogLoading(false);
+          return;
+        }
+      } catch {
+        // fallback to local cache below
       }
-    } catch {
-      // ignore malformed storage
-    }
+      const stored = typeof window !== 'undefined' ? window.localStorage.getItem(PLAN_STORAGE_KEY) : null;
+      if (!stored) {
+        if (active) setCatalogLoading(false);
+        return;
+      }
+      try {
+        const parsed = JSON.parse(stored) as PlanTier[];
+        if (active && Array.isArray(parsed) && parsed.length) {
+          setPlanCatalog(parsed);
+        }
+      } catch {
+        // ignore malformed cache
+      } finally {
+        if (active) setCatalogLoading(false);
+      }
+    };
+    void load();
+    return () => {
+      active = false;
+    };
   }, []);
 
-  const savePlanCatalog = useCallback(() => {
-    if (typeof window === 'undefined') return;
-    window.localStorage.setItem(PLAN_STORAGE_KEY, JSON.stringify(planCatalog));
-    setCatalogMessage('Subscription catalog saved.');
+  const savePlanCatalog = useCallback(async () => {
+    try {
+      const payload = {
+        models: planCatalog.map((plan) => ({
+          code: plan.code,
+          name: plan.name,
+          enabled: plan.enabled,
+          pc_limit: plan.pc_limit,
+          monthly: plan.monthly,
+          quarterly: plan.quarterly,
+          yearly: plan.yearly,
+          onboarding_offer: plan.onboarding_offer,
+          features: plan.features,
+        })),
+      };
+      const response = await apiRequest<{ models?: PlanTier[] }>('admin/subscription-models', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (response.models && response.models.length) {
+        setPlanCatalog(response.models);
+        if (typeof window !== 'undefined') {
+          window.localStorage.setItem(PLAN_STORAGE_KEY, JSON.stringify(response.models));
+        }
+      }
+      setCatalogMessage('Subscription catalog saved in backend.');
+    } catch {
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem(PLAN_STORAGE_KEY, JSON.stringify(planCatalog));
+      }
+      setCatalogMessage('Backend save failed. Saved local fallback only.');
+    }
   }, [planCatalog]);
 
-  return { planCatalog, setPlanCatalog, catalogMessage, savePlanCatalog };
+  return { planCatalog, setPlanCatalog, catalogMessage, savePlanCatalog, catalogLoading };
 }
 
 function ErrorBanner({ message }: { message: string }) {
@@ -698,6 +773,7 @@ function VendorsPanel({ verificationOnly = false }: { verificationOnly?: boolean
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState(verificationOnly ? 'pending_verification' : '');
   const [subscriptionState, setSubscriptionState] = useState('');
+  const [inactiveOver90Only, setInactiveOver90Only] = useState(false);
 
   const [selectedVendorId, setSelectedVendorId] = useState<number | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -719,6 +795,7 @@ function VendorsPanel({ verificationOnly = false }: { verificationOnly?: boolean
       if (search.trim()) params.set('search', search.trim());
       if (status) params.set('status', status);
       if (subscriptionState) params.set('subscription_state', subscriptionState);
+      if (inactiveOver90Only) params.set('inactive_over_days', '90');
       if (verificationOnly) params.set('verified_only', 'false');
 
       const data = await apiRequest<{ vendors: VendorRow[] }>(`admin/vendors?${params.toString()}`);
@@ -728,7 +805,7 @@ function VendorsPanel({ verificationOnly = false }: { verificationOnly?: boolean
     } finally {
       setLoading(false);
     }
-  }, [search, status, subscriptionState, verificationOnly]);
+  }, [search, status, subscriptionState, inactiveOver90Only, verificationOnly]);
 
   const loadDetail = useCallback(async (vendorId: number) => {
     setDetailLoading(true);
@@ -777,37 +854,22 @@ function VendorsPanel({ verificationOnly = false }: { verificationOnly?: boolean
     }
   };
 
-  const notifyAndDeactivate = async (vendor: VendorRow) => {
-    const subject = `Hash For Gamers: Cafe Status Update for ${vendor.cafe_name}`;
-    const body = [
-      `Hello ${vendor.owner_name || 'Partner'},`,
-      '',
-      `Your cafe (${vendor.cafe_name}) is being marked inactive on Hash For Gamers.`,
-      '',
-      'What you lose while inactive:',
-      '- Visibility on Hash consumer app',
-      '- New app-origin bookings',
-      '- Access to active subscription benefits',
-      '- Real-time campaign and discovery traffic',
-      '',
-      'To reactivate, please resolve pending compliance/subscription requirements and contact support.',
-      '',
-      'Thanks,',
-      'Hash For Gamers Ops'
-    ].join('\n');
-
-    await optionalApiRequest(
-      `admin/vendors/${vendor.vendor_id}/notifications/deactivation`,
-      {}
-    );
-    await updateStatus(vendor.vendor_id, 'inactive');
-
-    if (vendor.email) {
-      const mailto = `mailto:${encodeURIComponent(vendor.email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-      if (typeof window !== 'undefined') {
-        window.open(mailto, '_blank', 'noopener,noreferrer');
-      }
+  const notifyVendorDeactivation = async (vendor: VendorRow) => {
+    const reason = (window.prompt('Optional reason for notification email:') || '').trim();
+    try {
+      await apiRequest(`admin/vendors/${vendor.vendor_id}/notifications/deactivation`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason, sent_by: 'super_admin_dashboard' }),
+      });
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to send notification');
     }
+  };
+
+  const deactivateVendor = async (vendor: VendorRow) => {
+    await updateStatus(vendor.vendor_id, 'inactive');
   };
 
   const verifyDocs = async (statusValue: 'verified' | 'rejected' | 'unverified') => {
@@ -1017,6 +1079,10 @@ function VendorsPanel({ verificationOnly = false }: { verificationOnly?: boolean
           <option value="active">Active Subscriptions</option>
           <option value="inactive">Inactive Subscriptions</option>
         </select>
+        <label className="inline-check">
+          <input type="checkbox" checked={inactiveOver90Only} onChange={(e) => setInactiveOver90Only(e.target.checked)} />
+          Inactive &gt; 90 days
+        </label>
       </div>
 
       {loading ? <LoadingRow text="Loading cafes..." /> : null}
@@ -1030,6 +1096,7 @@ function VendorsPanel({ verificationOnly = false }: { verificationOnly?: boolean
               <th>Status</th>
               <th>Subscription</th>
               <th>Docs</th>
+              <th>Notices</th>
               <th>Credentials</th>
               <th>Team</th>
               <th>Actions</th>
@@ -1047,9 +1114,20 @@ function VendorsPanel({ verificationOnly = false }: { verificationOnly?: boolean
                 <td>
                   <div>{v.subscription?.package?.name || 'No Plan'}</div>
                   <small>{v.subscription?.is_active ? 'active' : 'inactive'}</small>
+                  {v.subscription?.inactive_over_90_days ? (
+                    <>
+                      <br />
+                      <small>inactive {v.subscription?.inactive_for_days || 0}d</small>
+                    </>
+                  ) : null}
                 </td>
                 <td>
                   <small>{v.documents?.verified ?? 0}/{v.documents?.total ?? 0} verified</small>
+                </td>
+                <td>
+                  <small>sent: {v.deactivation_notifications?.sent_count ?? 0}</small>
+                  <br />
+                  <small>{v.deactivation_notifications?.last_sent_at ? new Date(v.deactivation_notifications.last_sent_at).toLocaleDateString() : '-'}</small>
                 </td>
                 <td>
                   <small>PIN: {v.credentials?.pin || '-'}</small>
@@ -1061,14 +1139,15 @@ function VendorsPanel({ verificationOnly = false }: { verificationOnly?: boolean
                   <div className="row-actions">
                     <button className="btn-ghost" onClick={() => openDetail(v.vendor_id)}>View</button>
                     <button className="btn-ghost" onClick={() => updateStatus(v.vendor_id, 'active')}>Activate</button>
-                    <button className="btn-ghost" onClick={() => notifyAndDeactivate(v)}>Notify + Deactivate</button>
+                    <button className="btn-ghost" onClick={() => notifyVendorDeactivation(v)}>Notify</button>
+                    <button className="btn-ghost" onClick={() => deactivateVendor(v)}>Deactivate</button>
                   </div>
                 </td>
               </tr>
             ))}
             {!filtered.length && !loading ? (
               <tr>
-                <td colSpan={8}><small>No cafes found.</small></td>
+                <td colSpan={9}><small>No cafes found.</small></td>
               </tr>
             ) : null}
           </tbody>
@@ -2123,7 +2202,7 @@ function SubscriptionsPanel({ modelsOnly = false }: { modelsOnly?: boolean }) {
   const [status, setStatus] = useState('');
   const [packageCode, setPackageCode] = useState<Record<number, string>>({});
   const [historyVendorId, setHistoryVendorId] = useState<number | null>(null);
-  const { planCatalog, setPlanCatalog, catalogMessage, savePlanCatalog } = usePlanCatalogState();
+  const { planCatalog, setPlanCatalog, catalogMessage, savePlanCatalog, catalogLoading } = usePlanCatalogState();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -2219,6 +2298,7 @@ function SubscriptionsPanel({ modelsOnly = false }: { modelsOnly?: boolean }) {
 
       {error ? <ErrorBanner message={error} /> : null}
       {catalogMessage ? <div className="success-banner">{catalogMessage}</div> : null}
+      {catalogLoading ? <LoadingRow text="Loading subscription models..." /> : null}
 
       {modelsOnly ? (
         <>
@@ -2281,7 +2361,7 @@ function SubscriptionsPanel({ modelsOnly = false }: { modelsOnly?: boolean }) {
               </table>
             </div>
             <div className="row-actions">
-              <button className="btn-primary" onClick={savePlanCatalog}>Save Subscription Models</button>
+              <button className="btn-primary" onClick={() => void savePlanCatalog()}>Save Subscription Models</button>
               <small>Disable Early Bird anytime using the Enabled toggle.</small>
             </div>
           </div>
@@ -2345,31 +2425,38 @@ function SubscriptionsPanel({ modelsOnly = false }: { modelsOnly?: boolean }) {
           </div>
 
           {historyVendorId ? (
-            <div className="subsection">
-              <h3>Subscription History · Vendor #{historyVendorId}</h3>
-              <div className="table-wrap">
-                <table className="table">
-                  <thead>
-                    <tr>
-                      <th>Status</th>
-                      <th>Package</th>
-                      <th>Amount</th>
-                      <th>Period</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {selectedHistory.map((row) => (
-                      <tr key={row.id}>
-                        <td>{row.status}</td>
-                        <td>{row.package?.name || row.package?.code || '-'}</td>
-                        <td>₹{Number(row.amount_paid || 0).toFixed(2)}</td>
-                        <td><small>{row.period_start ? new Date(row.period_start).toLocaleDateString() : '-'} → {row.period_end ? new Date(row.period_end).toLocaleDateString() : '-'}</small></td>
+            <div className="overlay-backdrop" onClick={() => setHistoryVendorId(null)}>
+              <div className="overlay-panel" onClick={(e) => e.stopPropagation()}>
+                <div className="overlay-header">
+                  <div>
+                    <h3>Subscription History · Vendor #{historyVendorId}</h3>
+                    <p>Quick history overlay so no long scrolling is needed.</p>
+                  </div>
+                  <button className="btn-ghost" onClick={() => setHistoryVendorId(null)}><X size={16} /> Close</button>
+                </div>
+                <div className="table-wrap">
+                  <table className="table">
+                    <thead>
+                      <tr>
+                        <th>Status</th>
+                        <th>Package</th>
+                        <th>Amount</th>
+                        <th>Period</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {selectedHistory.map((row) => (
+                        <tr key={row.id}>
+                          <td>{row.status}</td>
+                          <td>{row.package?.name || row.package?.code || '-'}</td>
+                          <td>₹{Number(row.amount_paid || 0).toFixed(2)}</td>
+                          <td><small>{row.period_start ? new Date(row.period_start).toLocaleDateString() : '-'} → {row.period_end ? new Date(row.period_end).toLocaleDateString() : '-'}</small></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
-              <button className="btn-ghost" onClick={() => setHistoryVendorId(null)}>Close History</button>
             </div>
           ) : null}
         </>
