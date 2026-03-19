@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import Image from 'next/image';
 import {
   BarChart3,
@@ -35,6 +35,7 @@ type VendorRow = {
   vendor_id: number;
   cafe_name: string;
   owner_name: string;
+  account_id?: number | null;
   status: string;
   email?: string;
   phone?: string;
@@ -1044,6 +1045,44 @@ function VendorsPanel({ verificationOnly = false }: { verificationOnly?: boolean
     [vendors, search]
   );
 
+  const groupedVendors = useMemo(() => {
+    const groups = new Map<string, { key: string; title: string; subtitle: string; vendors: VendorRow[] }>();
+    for (const vendor of filtered) {
+      const emailKey = (vendor.email || '').trim().toLowerCase();
+      const phoneKey = (vendor.phone || '').replace(/\D/g, '');
+      const ownerKey = (vendor.owner_name || '').trim().toLowerCase();
+      const accountKey = vendor.account_id ? `account:${vendor.account_id}` : '';
+      const key = accountKey || (emailKey ? `email:${emailKey}` : '') || (phoneKey ? `phone:${phoneKey}` : '') || `owner:${ownerKey}` || `vendor:${vendor.vendor_id}`;
+
+      if (!groups.has(key)) {
+        const title = vendor.owner_name || vendor.email || vendor.phone || `Owner Group ${groups.size + 1}`;
+        const subtitleParts = [
+          accountKey ? `Account #${vendor.account_id}` : null,
+          vendor.email ? `Email: ${vendor.email}` : null,
+          vendor.phone ? `Phone: ${vendor.phone}` : null,
+        ].filter(Boolean);
+        groups.set(key, {
+          key,
+          title,
+          subtitle: subtitleParts.join(' · '),
+          vendors: [],
+        });
+      }
+      groups.get(key)!.vendors.push(vendor);
+    }
+
+    return Array.from(groups.values())
+      .map((group) => ({
+        ...group,
+        vendors: group.vendors.sort((a, b) => a.vendor_id - b.vendor_id),
+      }))
+      .sort((a, b) => {
+        const av = a.vendors[0]?.vendor_id || 0;
+        const bv = b.vendors[0]?.vendor_id || 0;
+        return av - bv;
+      });
+  }, [filtered]);
+
   const linkedStores = useMemo(() => {
     if (!vendorDetail) return [] as VendorRow[];
     const keys = new Set(
@@ -1118,49 +1157,59 @@ function VendorsPanel({ verificationOnly = false }: { verificationOnly?: boolean
             </tr>
           </thead>
           <tbody>
-            {filtered.map((v) => (
-              <tr key={v.vendor_id}>
-                <td>#{v.vendor_id}</td>
-                <td>
-                  <div>{v.cafe_name}</div>
-                  <small>{v.owner_name}</small>
-                </td>
-                <td><span className={`pill ${v.status === 'active' ? 'pill-green' : 'pill-muted'}`}>{v.status}</span></td>
-                <td>
-                  <div>{v.subscription?.package?.name || 'No Plan'}</div>
-                  <small>{v.subscription?.is_active ? 'active' : 'inactive'}</small>
-                  {v.subscription?.inactive_over_90_days ? (
-                    <>
+            {groupedVendors.map((group) => (
+              <Fragment key={`group-${group.key}`}>
+                <tr className="table-group-row">
+                  <td colSpan={9}>
+                    <strong>{group.title}</strong>
+                    <small>{group.subtitle || 'Linked cafes under same owner identity'}</small>
+                  </td>
+                </tr>
+                {group.vendors.map((v) => (
+                  <tr key={v.vendor_id}>
+                    <td>#{v.vendor_id}</td>
+                    <td>
+                      <div>{v.cafe_name}</div>
+                      <small>{v.owner_name}</small>
+                    </td>
+                    <td><span className={`pill ${v.status === 'active' ? 'pill-green' : 'pill-muted'}`}>{v.status}</span></td>
+                    <td>
+                      <div>{v.subscription?.package?.name || 'No Plan'}</div>
+                      <small>{v.subscription?.is_active ? 'active' : 'inactive'}</small>
+                      {v.subscription?.inactive_over_90_days ? (
+                        <>
+                          <br />
+                          <small>inactive {v.subscription?.inactive_for_days || 0}d</small>
+                        </>
+                      ) : null}
+                    </td>
+                    <td>
+                      <small>{v.documents?.verified ?? 0}/{v.documents?.total ?? 0} verified</small>
+                    </td>
+                    <td>
+                      <small>sent: {v.deactivation_notifications?.sent_count ?? 0}</small>
                       <br />
-                      <small>inactive {v.subscription?.inactive_for_days || 0}d</small>
-                    </>
-                  ) : null}
-                </td>
-                <td>
-                  <small>{v.documents?.verified ?? 0}/{v.documents?.total ?? 0} verified</small>
-                </td>
-                <td>
-                  <small>sent: {v.deactivation_notifications?.sent_count ?? 0}</small>
-                  <br />
-                  <small>{v.deactivation_notifications?.last_sent_at ? new Date(v.deactivation_notifications.last_sent_at).toLocaleDateString() : '-'}</small>
-                </td>
-                <td>
-                  <small>PIN: {v.credentials?.pin || '-'}</small>
-                  <br />
-                  <small>{v.credentials?.password?.has_password ? (v.credentials?.password?.masked_preview || 'set') : 'not set'}</small>
-                </td>
-                <td><small>{v.team_access?.active ?? 0}/{v.team_access?.total ?? 0}</small></td>
-                <td>
-                  <div className="row-actions">
-                    <button className="btn-ghost" onClick={() => openDetail(v.vendor_id)}>View</button>
-                    <button className="btn-ghost" onClick={() => updateStatus(v.vendor_id, 'active')}>Activate</button>
-                    <button className="btn-ghost" onClick={() => notifyVendorDeactivation(v)}>Notify</button>
-                    <button className="btn-ghost" onClick={() => deactivateVendor(v)}>Deactivate</button>
-                  </div>
-                </td>
-              </tr>
+                      <small>{v.deactivation_notifications?.last_sent_at ? new Date(v.deactivation_notifications.last_sent_at).toLocaleDateString() : '-'}</small>
+                    </td>
+                    <td>
+                      <small>PIN: {v.credentials?.pin || '-'}</small>
+                      <br />
+                      <small>{v.credentials?.password?.has_password ? (v.credentials?.password?.masked_preview || 'set') : 'not set'}</small>
+                    </td>
+                    <td><small>{v.team_access?.active ?? 0}/{v.team_access?.total ?? 0}</small></td>
+                    <td>
+                      <div className="row-actions">
+                        <button className="btn-ghost" onClick={() => openDetail(v.vendor_id)}>View</button>
+                        <button className="btn-ghost" onClick={() => updateStatus(v.vendor_id, 'active')}>Activate</button>
+                        <button className="btn-ghost" onClick={() => notifyVendorDeactivation(v)}>Notify</button>
+                        <button className="btn-ghost" onClick={() => deactivateVendor(v)}>Deactivate</button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </Fragment>
             ))}
-            {!filtered.length && !loading ? (
+            {!groupedVendors.length && !loading ? (
               <tr>
                 <td colSpan={9}><small>No cafes found.</small></td>
               </tr>

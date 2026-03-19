@@ -331,6 +331,22 @@ button:focus {
   background: color-mix(in srgb, var(--brand), transparent 94%);
 }
 
+.table-group-row td {
+  background: color-mix(in srgb, var(--brand), transparent 90%);
+  border-bottom: 1px solid var(--border);
+}
+
+.table-group-row strong {
+  display: block;
+  font-size: 0.84rem;
+  color: var(--text-strong);
+}
+
+.table-group-row small {
+  display: block;
+  font-size: 0.76rem;
+}
+
 .table small {
   color: var(--text-muted);
 }
