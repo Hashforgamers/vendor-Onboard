@@ -176,7 +176,7 @@ type PlanTier = {
   features: string[];
 };
 
-const PLAN_STORAGE_KEY = 'hash_superadmin_plan_catalog_v1';
+const PLAN_STORAGE_KEY = 'hash_superadmin_plan_catalog_v2';
 
 const DEFAULT_PLAN_CATALOG: PlanTier[] = [
   {
@@ -279,6 +279,31 @@ async function optionalApiRequest<T>(path: string, fallback: T): Promise<T> {
   }
 }
 
+function normalizePlanModels(models: Array<Record<string, unknown>> | undefined | null): PlanTier[] {
+  return (models || [])
+    .map((item) => {
+      const rawFeatures = Array.isArray(item.plan_features)
+        ? item.plan_features
+        : Array.isArray(item.features)
+          ? item.features
+          : Array.isArray((item.features as Record<string, unknown> | undefined)?.plan_features)
+            ? ((item.features as Record<string, unknown>).plan_features as unknown[])
+            : [];
+      return {
+        code: String(item.code || '').toLowerCase(),
+        name: String(item.name || ''),
+        enabled: Boolean(item.active ?? item.enabled ?? true),
+        pc_limit: Number(item.pc_limit || 0),
+        monthly: Number(item.monthly || (item.features as Record<string, unknown> | undefined)?.price_inr || 0),
+        quarterly: Number(item.quarterly || (item.features as Record<string, unknown> | undefined)?.quarterly_price_inr || 0),
+        yearly: Number(item.yearly || (item.features as Record<string, unknown> | undefined)?.yearly_price_inr || 0),
+        onboarding_offer: String(item.onboarding_offer || (item.features as Record<string, unknown> | undefined)?.onboarding_offer || ''),
+        features: rawFeatures.map((feature) => String(feature)).filter(Boolean),
+      };
+    })
+    .filter((item) => Boolean(item.code && item.name));
+}
+
 function usePlanCatalogState() {
   const [planCatalog, setPlanCatalog] = useState<PlanTier[]>(DEFAULT_PLAN_CATALOG);
   const [catalogMessage, setCatalogMessage] = useState('');
@@ -290,19 +315,7 @@ function usePlanCatalogState() {
     const load = async () => {
       try {
         const payload = await apiRequest<{ models: Array<Record<string, unknown>> }>('admin/subscription-models');
-        const mapped = (payload.models || [])
-          .map((item) => ({
-            code: String(item.code || '').toLowerCase(),
-            name: String(item.name || ''),
-            enabled: Boolean(item.active ?? item.enabled ?? true),
-            pc_limit: Number(item.pc_limit || 0),
-            monthly: Number(item.monthly || 0),
-            quarterly: Number(item.quarterly || 0),
-            yearly: Number(item.yearly || 0),
-            onboarding_offer: String(item.onboarding_offer || ''),
-            features: Array.isArray(item.plan_features || item.features) ? (item.plan_features || item.features) as string[] : [],
-          }))
-          .filter((item) => Boolean(item.code && item.name));
+        const mapped = normalizePlanModels(payload.models);
         if (active && mapped.length) {
           setPlanCatalog(mapped);
           if (typeof window !== 'undefined') {
@@ -320,9 +333,10 @@ function usePlanCatalogState() {
         return;
       }
       try {
-        const parsed = JSON.parse(stored) as PlanTier[];
-        if (active && Array.isArray(parsed) && parsed.length) {
-          setPlanCatalog(parsed);
+        const parsed = JSON.parse(stored) as Array<Record<string, unknown>>;
+        const mapped = normalizePlanModels(parsed);
+        if (active && mapped.length) {
+          setPlanCatalog(mapped);
         }
       } catch {
         // ignore malformed cache
@@ -351,15 +365,16 @@ function usePlanCatalogState() {
           features: plan.features,
         })),
       };
-      const response = await apiRequest<{ models?: PlanTier[] }>('admin/subscription-models', {
+      const response = await apiRequest<{ models?: Array<Record<string, unknown>> }>('admin/subscription-models', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
       if (response.models && response.models.length) {
-        setPlanCatalog(response.models);
+        const mapped = normalizePlanModels(response.models);
+        setPlanCatalog(mapped.length ? mapped : planCatalog);
         if (typeof window !== 'undefined') {
-          window.localStorage.setItem(PLAN_STORAGE_KEY, JSON.stringify(response.models));
+          window.localStorage.setItem(PLAN_STORAGE_KEY, JSON.stringify(mapped.length ? mapped : planCatalog));
         }
       }
       setCatalogMessage('Subscription catalog saved in backend.');
@@ -2353,7 +2368,7 @@ function SubscriptionsPanel({ modelsOnly = false }: { modelsOnly?: boolean }) {
                         <br />
                         <small>Yr: {plan.monthly > 0 ? Math.max(0, Math.round((1 - (plan.yearly / (plan.monthly * 12))) * 100)) : 0}% off</small>
                       </td>
-                      <td><small>{plan.onboarding_offer || '—'}</small><br /><small>{plan.features.join(' • ')}</small></td>
+                      <td><small>{plan.onboarding_offer || '—'}</small><br /><small>{(Array.isArray(plan.features) ? plan.features : []).join(' • ')}</small></td>
                       <td><strong>{plan.assigned}</strong></td>
                     </tr>
                   ))}
