@@ -202,8 +202,8 @@ const DEFAULT_PLAN_CATALOG: PlanTier[] = [
     features: ['Realtime bookings', '1 kiosk mapping', 'Basic reports', '2 staff logins']
   },
   {
-    code: 'pro',
-    name: 'Pro',
+    code: 'grow',
+    name: 'Grow',
     enabled: true,
     pc_limit: 60,
     monthly: 4999,
@@ -283,6 +283,8 @@ async function optionalApiRequest<T>(path: string, fallback: T): Promise<T> {
 function normalizePlanModels(models: Array<Record<string, unknown>> | undefined | null): PlanTier[] {
   return (models || [])
     .map((item) => {
+      const normalizedCodeRaw = String(item.code || '').toLowerCase();
+      const normalizedCode = normalizedCodeRaw === 'pro' ? 'grow' : normalizedCodeRaw;
       const rawFeatures = Array.isArray(item.plan_features)
         ? item.plan_features
         : Array.isArray(item.features)
@@ -291,7 +293,7 @@ function normalizePlanModels(models: Array<Record<string, unknown>> | undefined 
             ? ((item.features as Record<string, unknown>).plan_features as unknown[])
             : [];
       return {
-        code: String(item.code || '').toLowerCase(),
+        code: normalizedCode,
         name: String(item.name || ''),
         enabled: Boolean(item.active ?? item.enabled ?? true),
         pc_limit: Number(item.pc_limit || 0),
