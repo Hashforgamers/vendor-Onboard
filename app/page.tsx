@@ -256,11 +256,15 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   });
 
   const text = await response.text();
+  const toCleanMessage = (raw: string): string => {
+    const compact = raw.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+    return compact || raw.trim();
+  };
   const data = text ? (() => {
     try {
       return JSON.parse(text);
     } catch {
-      return { message: text };
+      return { message: toCleanMessage(text) };
     }
   })() : {};
 
