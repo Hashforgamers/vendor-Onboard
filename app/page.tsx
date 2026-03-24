@@ -30,6 +30,16 @@ type ModuleId =
   | 'cafe_subscriptions';
 
 type ApiError = { message?: string; error?: string; details?: unknown };
+type DeactivationNotifyResponse = {
+  success?: boolean;
+  message?: string;
+  data?: {
+    sent_to?: string;
+    template_version?: string;
+    mail_subject?: string;
+    html_enabled?: boolean;
+  };
+};
 
 type VendorRow = {
   vendor_id: number;
@@ -792,6 +802,7 @@ function VendorsPanel({ verificationOnly = false }: { verificationOnly?: boolean
   const [vendors, setVendors] = useState<VendorRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState(verificationOnly ? 'pending_verification' : '');
   const [subscriptionState, setSubscriptionState] = useState('');
@@ -879,13 +890,22 @@ function VendorsPanel({ verificationOnly = false }: { verificationOnly?: boolean
   const notifyVendorDeactivation = async (vendor: VendorRow) => {
     const reason = (window.prompt('Optional reason for notification email:') || '').trim();
     try {
-      await apiRequest(`admin/vendors/${vendor.vendor_id}/notifications/deactivation`, {
+      setError('');
+      const response = await apiRequest<DeactivationNotifyResponse>(`admin/vendors/${vendor.vendor_id}/notifications/deactivation`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ reason, sent_by: 'super_admin_dashboard' }),
       });
+
+      const templateVersion = response?.data?.template_version || 'unknown_template';
+      const recipient = response?.data?.sent_to || vendor.email || 'vendor email';
+      const subject = response?.data?.mail_subject || 'subject unavailable';
+      setNotice(
+        `Notify sent to ${recipient} using ${templateVersion}. Subject: ${subject}`
+      );
       await load();
     } catch (e) {
+      setNotice('');
       setError(e instanceof Error ? e.message : 'Failed to send notification');
     }
   };
@@ -1118,6 +1138,7 @@ function VendorsPanel({ verificationOnly = false }: { verificationOnly?: boolean
       />
 
       {error ? <ErrorBanner message={error} /> : null}
+      {notice ? <div className="success-banner">{notice}</div> : null}
       <div className="info-banner">
         {verificationOnly
           ? 'Verification Desk = onboarding compliance gate. Cafe Registry = day-to-day operational management.'

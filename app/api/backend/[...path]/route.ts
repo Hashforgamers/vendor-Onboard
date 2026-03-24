@@ -58,6 +58,7 @@ async function proxy(request: NextRequest, pathSegments: string[]): Promise<Next
       "content-type",
       upstream.headers.get("content-type") || "application/json"
     );
+    responseHeaders.set("x-proxy-backend-base", BACKEND_BASE);
 
     return new NextResponse(responseText, {
       status: upstream.status,
