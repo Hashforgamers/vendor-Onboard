@@ -40,6 +40,20 @@ type DeactivationNotifyResponse = {
   };
 };
 
+type PromotionNotifyResponse = {
+  success?: boolean;
+  message?: string;
+  data?: {
+    sent_to?: string;
+    mail_subject?: string;
+    expires_at?: string;
+    login_email?: string;
+    temporary_password?: string;
+    pin_code?: string;
+    dashboard_url?: string;
+  };
+};
+
 type VendorRow = {
   vendor_id: number;
   cafe_name: string;
@@ -908,6 +922,33 @@ function VendorsPanel({ verificationOnly = false }: { verificationOnly?: boolean
     }
   };
 
+  const notifyVendorPromotion = async (vendor: VendorRow) => {
+    const confirmed = window.confirm(
+      `Send Early Onboard (1 month free) promotion mail to ${vendor.cafe_name}? This will generate a one-time avail link and reset temporary credentials.`
+    );
+    if (!confirmed) return;
+    try {
+      setError('');
+      const response = await apiRequest<PromotionNotifyResponse>(
+        `admin/vendors/${vendor.vendor_id}/notifications/promotion/early-onboard`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sent_by: 'super_admin_dashboard' }),
+        }
+      );
+      const recipient = response?.data?.sent_to || vendor.email || 'vendor email';
+      const expiresAt = response?.data?.expires_at
+        ? new Date(response.data.expires_at).toLocaleString()
+        : 'N/A';
+      setNotice(`Promotion mail sent to ${recipient}. Link expiry: ${expiresAt}`);
+      await load();
+    } catch (e) {
+      setNotice('');
+      setError(e instanceof Error ? e.message : 'Failed to send promotion mail');
+    }
+  };
+
   const deactivateVendor = async (vendor: VendorRow) => {
     await updateStatus(vendor.vendor_id, 'inactive');
   };
@@ -1226,6 +1267,7 @@ function VendorsPanel({ verificationOnly = false }: { verificationOnly?: boolean
                       <div className="row-actions">
                         <button className="btn-ghost" onClick={() => openDetail(v.vendor_id)}>View</button>
                         <button className="btn-ghost" onClick={() => updateStatus(v.vendor_id, 'active')}>Activate</button>
+                        <button className="btn-ghost" onClick={() => notifyVendorPromotion(v)}>Notify Promotion</button>
                         <button className="btn-ghost" onClick={() => notifyVendorDeactivation(v)}>Notify</button>
                         <button className="btn-ghost" onClick={() => deactivateVendor(v)}>Deactivate</button>
                       </div>
