@@ -35,7 +35,6 @@ type DeactivationNotifyResponse = {
   message?: string;
   data?: {
     sent_to?: string;
-    template_version?: string;
     mail_subject?: string;
     html_enabled?: boolean;
   };
@@ -897,11 +896,10 @@ function VendorsPanel({ verificationOnly = false }: { verificationOnly?: boolean
         body: JSON.stringify({ reason, sent_by: 'super_admin_dashboard' }),
       });
 
-      const templateVersion = response?.data?.template_version || 'unknown_template';
       const recipient = response?.data?.sent_to || vendor.email || 'vendor email';
       const subject = response?.data?.mail_subject || 'subject unavailable';
       setNotice(
-        `Notify sent to ${recipient} using ${templateVersion}. Subject: ${subject}`
+        `Notify sent to ${recipient}. Subject: ${subject}`
       );
       await load();
     } catch (e) {
