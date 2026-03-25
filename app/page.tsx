@@ -54,6 +54,37 @@ type PromotionNotifyResponse = {
   };
 };
 
+type NewsletterPreviewResponse = {
+  success?: boolean;
+  message?: string;
+  data?: {
+    subject?: string;
+    preview_html?: string;
+    preview_text?: string;
+    audience_mode?: 'all' | 'selected';
+    recipient_count?: number;
+    missing_email_vendor_ids?: number[];
+    duplicate_recipients?: number;
+  };
+};
+
+type NewsletterSendResponse = {
+  success?: boolean;
+  message?: string;
+  data?: {
+    campaign_id?: string;
+    attempted?: number;
+    sent?: number;
+    failed?: number;
+    subject?: string;
+    audience_mode?: 'all' | 'selected';
+    recipient_count?: number;
+    missing_email_vendor_ids?: number[];
+    duplicate_recipients?: number;
+    failed_recipients?: Array<{ email?: string; error?: string }>;
+  };
+};
+
 type VendorRow = {
   vendor_id: number;
   cafe_name: string;
@@ -827,6 +858,21 @@ function VendorsPanel({ verificationOnly = false }: { verificationOnly?: boolean
   const [selectedDocIds, setSelectedDocIds] = useState<number[]>([]);
   const [detailOpen, setDetailOpen] = useState(false);
   const [previewDoc, setPreviewDoc] = useState<{ url: string; type: string } | null>(null);
+  const [newsletterTopic, setNewsletterTopic] = useState('');
+  const [newsletterContent, setNewsletterContent] = useState('');
+  const [newsletterMode, setNewsletterMode] = useState<'all' | 'selected'>('all');
+  const [newsletterSelectedVendorIds, setNewsletterSelectedVendorIds] = useState<number[]>([]);
+  const [newsletterPreviewLoading, setNewsletterPreviewLoading] = useState(false);
+  const [newsletterSending, setNewsletterSending] = useState(false);
+  const [newsletterPreview, setNewsletterPreview] = useState<{
+    subject: string;
+    previewHtml: string;
+    previewText: string;
+    recipientCount: number;
+    missingEmailVendorIds: number[];
+    duplicateRecipients: number;
+    audienceMode: 'all' | 'selected';
+  } | null>(null);
   const [ownerPinInput, setOwnerPinInput] = useState('');
   const [ownerPasswordInput, setOwnerPasswordInput] = useState('');
   const [staffPinDraft, setStaffPinDraft] = useState<Record<number, string>>({});
@@ -1166,6 +1212,106 @@ function VendorsPanel({ verificationOnly = false }: { verificationOnly?: boolean
     });
   }, [vendorDetail, vendors]);
 
+  const visibleVendorIds = useMemo(
+    () => groupedVendors.flatMap((group) => group.vendors.map((vendor) => vendor.vendor_id)),
+    [groupedVendors]
+  );
+
+  useEffect(() => {
+    setNewsletterSelectedVendorIds((prev) => prev.filter((id) => visibleVendorIds.includes(id)));
+  }, [visibleVendorIds]);
+
+  const toggleNewsletterVendor = (vendorId: number, checked: boolean) => {
+    setNewsletterSelectedVendorIds((prev) => {
+      if (checked) return Array.from(new Set([...prev, vendorId]));
+      return prev.filter((id) => id !== vendorId);
+    });
+  };
+
+  const selectAllVisibleVendors = () => {
+    setNewsletterSelectedVendorIds((prev) => Array.from(new Set([...prev, ...visibleVendorIds])));
+  };
+
+  const clearNewsletterVendorSelection = () => {
+    setNewsletterSelectedVendorIds([]);
+  };
+
+  const previewNewsletter = async () => {
+    setNewsletterPreviewLoading(true);
+    setError('');
+    setNotice('');
+    try {
+      const response = await apiRequest<NewsletterPreviewResponse>('admin/newsletters/preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          topic: newsletterTopic.trim(),
+          content: newsletterContent.trim(),
+          mode: newsletterMode,
+          vendor_ids: newsletterMode === 'selected' ? newsletterSelectedVendorIds : undefined,
+        }),
+      });
+      const payload = response.data;
+      setNewsletterPreview({
+        subject: payload?.subject || 'Hash For Gamers · Newsletter',
+        previewHtml: payload?.preview_html || '',
+        previewText: payload?.preview_text || '',
+        recipientCount: Number(payload?.recipient_count || 0),
+        missingEmailVendorIds: payload?.missing_email_vendor_ids || [],
+        duplicateRecipients: Number(payload?.duplicate_recipients || 0),
+        audienceMode: (payload?.audience_mode || newsletterMode) as 'all' | 'selected',
+      });
+      setNotice(`Preview ready for ${Number(payload?.recipient_count || 0)} recipients.`);
+    } catch (e) {
+      setNewsletterPreview(null);
+      setError(e instanceof Error ? e.message : 'Failed to generate newsletter preview');
+    } finally {
+      setNewsletterPreviewLoading(false);
+    }
+  };
+
+  const sendNewsletter = async () => {
+    const confirmation = window.confirm(
+      newsletterMode === 'all'
+        ? 'Send this newsletter to all gaming cafe owners with unique emails?'
+        : `Send this newsletter to ${newsletterSelectedVendorIds.length} selected cafes?`
+    );
+    if (!confirmation) return;
+
+    setNewsletterSending(true);
+    setError('');
+    setNotice('');
+    try {
+      const response = await apiRequest<NewsletterSendResponse>('admin/newsletters/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          topic: newsletterTopic.trim(),
+          content: newsletterContent.trim(),
+          mode: newsletterMode,
+          vendor_ids: newsletterMode === 'selected' ? newsletterSelectedVendorIds : undefined,
+          sent_by: 'super_admin_dashboard',
+        }),
+      });
+      const payload = response.data;
+      const sentCount = Number(payload?.sent || 0);
+      const failedCount = Number(payload?.failed || 0);
+      setNotice(
+        failedCount > 0
+          ? `Newsletter sent to ${sentCount} recipients, ${failedCount} failed.`
+          : `Newsletter sent successfully to ${sentCount} recipients.`
+      );
+      if (newsletterMode === 'selected') {
+        setNewsletterSelectedVendorIds([]);
+      }
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to send newsletter');
+    } finally {
+      setNewsletterSending(false);
+    }
+  };
+
   return (
     <section className="panel">
       <SectionHeader
@@ -1183,6 +1329,70 @@ function VendorsPanel({ verificationOnly = false }: { verificationOnly?: boolean
           ? 'Verification Desk = onboarding compliance gate. Cafe Registry = day-to-day operational management.'
           : 'Cafe Registry = operational control center. Use Verification Desk when you only want pending onboarding checks.'}
       </div>
+
+      {!verificationOnly ? (
+        <div className="subsection newsletter-panel">
+          <h3>Owner Newsletter Campaign</h3>
+          <div className="newsletter-grid">
+            <label>
+              Topic
+              <input
+                value={newsletterTopic}
+                onChange={(e) => setNewsletterTopic(e.target.value)}
+                placeholder="e.g. Monthly ops update, new feature rollout, festival offer"
+                maxLength={140}
+              />
+            </label>
+            <label>
+              Audience
+              <select value={newsletterMode} onChange={(e) => setNewsletterMode(e.target.value as 'all' | 'selected')}>
+                <option value="all">All cafe owners (deduplicated by email)</option>
+                <option value="selected">Selected cafes only</option>
+              </select>
+            </label>
+          </div>
+          <label>
+            Content
+            <textarea
+              value={newsletterContent}
+              onChange={(e) => setNewsletterContent(e.target.value)}
+              rows={6}
+              placeholder="Write newsletter content here. Keep it concise, actionable, and owner-friendly."
+            />
+          </label>
+          <div className="newsletter-actions">
+            <small>
+              {newsletterMode === 'all'
+                ? `Will send to all owners from ${visibleVendorIds.length} visible cafes.`
+                : `${newsletterSelectedVendorIds.length} selected cafes.`}
+            </small>
+            {newsletterMode === 'selected' ? (
+              <div className="row-actions">
+                <button type="button" className="btn-ghost" onClick={selectAllVisibleVendors}>Select Visible</button>
+                <button type="button" className="btn-ghost" onClick={clearNewsletterVendorSelection}>Clear Selection</button>
+              </div>
+            ) : null}
+            <div className="row-actions">
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={previewNewsletter}
+                disabled={newsletterPreviewLoading || (newsletterMode === 'selected' && newsletterSelectedVendorIds.length === 0)}
+              >
+                {newsletterPreviewLoading ? 'Generating Preview...' : 'Preview Template'}
+              </button>
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={sendNewsletter}
+                disabled={newsletterSending || (newsletterMode === 'selected' && newsletterSelectedVendorIds.length === 0)}
+              >
+                {newsletterSending ? 'Sending...' : 'Send Newsletter'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <div className="toolbar">
         <input placeholder="Search cafe, owner, email, id..." value={search} onChange={(e) => setSearch(e.target.value)} />
@@ -1211,6 +1421,7 @@ function VendorsPanel({ verificationOnly = false }: { verificationOnly?: boolean
         <table className="table">
           <thead>
             <tr>
+              {!verificationOnly ? <th>Select</th> : null}
               <th>ID</th>
               <th>Cafe</th>
               <th>Status</th>
@@ -1226,13 +1437,23 @@ function VendorsPanel({ verificationOnly = false }: { verificationOnly?: boolean
             {groupedVendors.map((group) => (
               <Fragment key={`group-${group.key}`}>
                 <tr className="table-group-row">
-                  <td colSpan={9}>
+                  <td colSpan={verificationOnly ? 9 : 10}>
                     <strong>{group.title}</strong>
                     <small>{group.subtitle || 'Linked cafes under same owner identity'}</small>
                   </td>
                 </tr>
                 {group.vendors.map((v) => (
                   <tr key={v.vendor_id}>
+                    {!verificationOnly ? (
+                      <td>
+                        <input
+                          type="checkbox"
+                          checked={newsletterSelectedVendorIds.includes(v.vendor_id)}
+                          onChange={(e) => toggleNewsletterVendor(v.vendor_id, e.target.checked)}
+                          aria-label={`Select vendor ${v.vendor_id} for newsletter`}
+                        />
+                      </td>
+                    ) : null}
                     <td>#{v.vendor_id}</td>
                     <td>
                       <div>{v.cafe_name}</div>
@@ -1278,7 +1499,7 @@ function VendorsPanel({ verificationOnly = false }: { verificationOnly?: boolean
             ))}
             {!groupedVendors.length && !loading ? (
               <tr>
-                <td colSpan={9}><small>No cafes found.</small></td>
+                <td colSpan={verificationOnly ? 9 : 10}><small>No cafes found.</small></td>
               </tr>
             ) : null}
           </tbody>
@@ -1516,6 +1737,28 @@ function VendorsPanel({ verificationOnly = false }: { verificationOnly?: boolean
                 </div>
               </div>
             ) : null}
+          </div>
+        </div>
+      ) : null}
+
+      {newsletterPreview ? (
+        <div className="overlay-backdrop" onClick={() => setNewsletterPreview(null)}>
+          <div className="overlay-panel preview-overlay" onClick={(e) => e.stopPropagation()}>
+            <div className="overlay-header">
+              <div>
+                <h3>Newsletter Preview</h3>
+                <p>{newsletterPreview.subject}</p>
+              </div>
+              <button className="btn-ghost" onClick={() => setNewsletterPreview(null)}><X size={16} /> Close</button>
+            </div>
+            <div className="info-banner">
+              Audience: {newsletterPreview.audienceMode} · Recipients: {newsletterPreview.recipientCount} · Missing emails: {newsletterPreview.missingEmailVendorIds.length} · Deduped duplicates: {newsletterPreview.duplicateRecipients}
+            </div>
+            <iframe
+              title="Newsletter template preview"
+              className="preview-frame"
+              srcDoc={newsletterPreview.previewHtml || `<pre style="padding:16px;">${newsletterPreview.previewText}</pre>`}
+            />
           </div>
         </div>
       ) : null}

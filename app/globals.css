@@ -477,6 +477,24 @@ button:focus {
   grid-template-columns: 1fr 1fr auto;
 }
 
+.newsletter-panel {
+  gap: 12px;
+}
+
+.newsletter-grid {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 10px;
+}
+
+.newsletter-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
 .overlay-backdrop {
   position: fixed;
   inset: 0;
@@ -577,6 +595,10 @@ button:focus {
   }
 
   .compact-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .newsletter-grid {
     grid-template-columns: 1fr;
   }
 
