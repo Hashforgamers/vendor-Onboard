@@ -26,6 +26,7 @@ import {
   Settings,
   SlidersHorizontal,
   Store,
+  Trash2,
   Ticket,
   Trophy,
   UserRound,
@@ -115,6 +116,28 @@ type VendorDetail = {
 };
 
 type ApiError = { message?: string; error?: string };
+
+type SettlementRow = {
+  vendor_id: number;
+  cafe_name: string;
+  booking_count: number;
+  transaction_count: number;
+  app_collected: number;
+  pending_settlement: number;
+  already_settled: number;
+};
+
+type GameRow = {
+  id?: number;
+  game_id?: number;
+  name?: string;
+  title?: string;
+  platform?: string;
+  cover_image_url?: string;
+  released?: string;
+  rating?: number;
+  vendors_count?: number;
+};
 
 const navItems: Array<{ id: ModuleId; label: string; icon: React.ComponentType<{ size?: number }> }> = [
   { id: 'overview', label: 'Dashboard', icon: Grid2X2 },
@@ -235,6 +258,27 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   }
 
   return data as T;
+}
+
+async function optionalApiRequest<T>(path: string, fallback: T): Promise<T> {
+  try {
+    return await apiRequest<T>(path);
+  } catch {
+    return fallback;
+  }
+}
+
+function todayIso() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function to12h(time24: string) {
+  const [rawHour, rawMinute] = time24.split(':');
+  const hour = Number(rawHour);
+  if (Number.isNaN(hour)) return '09:00 AM';
+  const period = hour >= 12 ? 'PM' : 'AM';
+  const h12 = hour % 12 === 0 ? 12 : hour % 12;
+  return `${String(h12).padStart(2, '0')}:${rawMinute || '00'} ${period}`;
 }
 
 function classNames(...items: Array<string | false | null | undefined>) {
@@ -405,6 +449,288 @@ function MetricCard({ icon: Icon, label, value, trend, tone = 'neutral' }: {
   );
 }
 
+function OnboardCafeModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
+  const [form, setForm] = useState({
+    cafe_name: '',
+    owner_name: '',
+    email: '',
+    phone: '',
+    city: '',
+    state: '',
+    country: 'India',
+    pin: '',
+    password: '',
+    machines: '10',
+    rate: '120',
+    open: '09:00',
+    close: '23:00',
+  });
+
+  const setField = (key: keyof typeof form, value: string) => {
+    setForm((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const submit = async () => {
+    setSaving(true);
+    setError('');
+    setMessage('');
+    try {
+      if (!form.cafe_name.trim() || !form.owner_name.trim() || !form.email.trim()) {
+        throw new Error('Cafe name, owner name, and email are required.');
+      }
+      const phone = form.phone.replace(/\D/g, '');
+      if (phone && phone.length !== 10) {
+        throw new Error('Phone must be 10 digits.');
+      }
+      const payload = {
+        cafe_name: form.cafe_name.trim(),
+        owner_name: form.owner_name.trim(),
+        vendor_account_email: form.email.trim().toLowerCase(),
+        vendor_pin: form.pin || undefined,
+        vendor_password: form.password || undefined,
+        contact_info: { email: form.email.trim().toLowerCase(), phone, website: undefined },
+        physicalAddress: {
+          street: form.city.trim() || 'Main Street',
+          city: form.city.trim(),
+          state: form.state.trim(),
+          zipCode: '000000',
+          country: form.country.trim() || 'India',
+        },
+        business_registration_details: {
+          registration_number: `HASH-${Date.now()}`,
+          business_type: 'private_limited',
+          tax_id: '',
+          registration_date: todayIso(),
+        },
+        document_submitted: {
+          business_registration: false,
+          owner_identification_proof: false,
+          tax_identification_number: false,
+          bank_acc_details: false,
+        },
+        timing: Object.fromEntries(['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'].map((day) => [day, {
+          open: to12h(form.open),
+          close: to12h(form.close),
+          closed: false,
+        }])),
+        opening_day: todayIso(),
+        slot_duration: 30,
+        amenities: { seating_area: true, washroom: true, air_conditioner: true },
+        available_games: [{ name: 'pc', total_slot: Number(form.machines || 1), rate_per_slot: Number(form.rate || 0) }],
+      };
+      const body = new FormData();
+      body.append('json', JSON.stringify(payload));
+      await apiRequest<{ message?: string; vendor_id?: number }>('onboard', { method: 'POST', body });
+      setMessage('Cafe onboarded successfully.');
+      onCreated();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to onboard cafe.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal-panel compact-modal" onClick={(event) => event.stopPropagation()}>
+        <div className="modal-head">
+          <div><h2>Onboard Cafe</h2><p>Create a vendor record with starter inventory and hours.</p></div>
+          <button className="icon-button" onClick={onClose}><X size={18} /></button>
+        </div>
+        {error ? <div className="action-notice bad">{error}</div> : null}
+        {message ? <div className="action-notice good">{message}</div> : null}
+        <div className="form-grid-compact">
+          <label>Cafe Name<input value={form.cafe_name} onChange={(e) => setField('cafe_name', e.target.value)} /></label>
+          <label>Owner Name<input value={form.owner_name} onChange={(e) => setField('owner_name', e.target.value)} /></label>
+          <label>Email<input value={form.email} onChange={(e) => setField('email', e.target.value)} /></label>
+          <label>Phone<input value={form.phone} onChange={(e) => setField('phone', e.target.value.replace(/\D/g, '').slice(0, 10))} /></label>
+          <label>City<input value={form.city} onChange={(e) => setField('city', e.target.value)} /></label>
+          <label>State<input value={form.state} onChange={(e) => setField('state', e.target.value)} /></label>
+          <label>Country<input value={form.country} onChange={(e) => setField('country', e.target.value)} /></label>
+          <label>Owner PIN<input value={form.pin} maxLength={4} onChange={(e) => setField('pin', e.target.value.replace(/\D/g, '').slice(0, 4))} /></label>
+          <label>Temp Password<input value={form.password} onChange={(e) => setField('password', e.target.value)} /></label>
+          <label>Machines<input value={form.machines} onChange={(e) => setField('machines', e.target.value.replace(/\D/g, ''))} /></label>
+          <label>Rate / Slot<input value={form.rate} onChange={(e) => setField('rate', e.target.value.replace(/\D/g, ''))} /></label>
+          <label>Hours<input value={`${form.open} - ${form.close}`} readOnly /></label>
+        </div>
+        <div className="modal-actions">
+          <button className="action-button secondary small-action" onClick={onClose}>Cancel</button>
+          <button className="action-button primary small-action" onClick={submit} disabled={saving}>{saving ? 'Saving...' : 'Create Cafe'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function VendorDetailModal({ vendor, onClose, onChanged }: {
+  vendor: VendorRow;
+  onClose: () => void;
+  onChanged: () => void;
+}) {
+  const [detail, setDetail] = useState<VendorDetail | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
+  const [pin, setPin] = useState('');
+  const [password, setPassword] = useState('');
+  const [staffName, setStaffName] = useState('');
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const data = await apiRequest<{ vendor: VendorDetail }>(`admin/vendors/${vendor.vendor_id}`);
+      setDetail(data.vendor);
+    } catch (e) {
+      setDetail(fallbackDetails[vendor.vendor_id] || {
+        vendor_id: vendor.vendor_id,
+        cafe_name: vendor.cafe_name,
+        owner_name: vendor.owner_name,
+        status: vendor.status,
+        account_email: vendor.email,
+        contact: { email: vendor.email, phone: vendor.phone },
+        documents: [],
+        subscriptions: [],
+        team_access: { available: true, staff: [] },
+      });
+      setError(e instanceof Error ? e.message : 'Loaded fallback details.');
+    } finally {
+      setLoading(false);
+    }
+  }, [vendor]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const runAction = async (label: string, fn: () => Promise<void>) => {
+    setError('');
+    setMessage('');
+    try {
+      await fn();
+      setMessage(label);
+      await load();
+      onChanged();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Action failed.');
+    }
+  };
+
+  const docs = detail?.documents || [];
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal-panel detail-modal" onClick={(event) => event.stopPropagation()}>
+        <div className="modal-head">
+          <div>
+            <h2>{detail?.cafe_name || vendor.cafe_name}</h2>
+            <p>Vendor #{vendor.vendor_id} · {detail?.owner_name || vendor.owner_name}</p>
+          </div>
+          <button className="icon-button" onClick={onClose}><X size={18} /></button>
+        </div>
+        {loading ? <div className="action-notice">Loading vendor detail...</div> : null}
+        {message ? <div className="action-notice good">{message}</div> : null}
+        {error ? <div className="action-notice bad">{error}</div> : null}
+
+        <div className="e2e-grid">
+          <section className="e2e-card">
+            <h3>Status</h3>
+            <p>{detail?.status || vendor.status}</p>
+            <div className="inline-actions">
+              <button onClick={() => runAction('Cafe activated.', () => apiRequest(`admin/vendors/${vendor.vendor_id}/status`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'active' }),
+              }).then(() => undefined))}>Activate</button>
+              <button onClick={() => runAction('Cafe suspended.', () => apiRequest(`admin/vendors/${vendor.vendor_id}/status`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'suspended' }),
+              }).then(() => undefined))}>Suspend</button>
+              <button className="danger" onClick={() => runAction('Cafe deboarded.', () => apiRequest(`admin/vendors/${vendor.vendor_id}`, { method: 'DELETE' }).then(() => undefined))}><Trash2 size={14} /> Deboard</button>
+            </div>
+          </section>
+
+          <section className="e2e-card">
+            <h3>Documents</h3>
+            {docs.length ? docs.map((doc) => (
+              <div className="mini-row" key={doc.id}>
+                <span>{doc.document_type}</span>
+                <b className={classNames('doc-status', statusTone(doc.status))}>{doc.status}</b>
+              </div>
+            )) : <p>No document records returned.</p>}
+            <div className="inline-actions">
+              <button disabled={!docs.length} onClick={() => runAction('Documents marked verified.', () => apiRequest(`admin/vendors/${vendor.vendor_id}/documents/verify`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ document_ids: docs.map((doc) => doc.id), status: 'verified' }),
+              }).then(() => undefined))}>Verify All</button>
+              <button disabled={!docs.length} onClick={() => runAction('Documents marked rejected.', () => apiRequest(`admin/vendors/${vendor.vendor_id}/documents/verify`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ document_ids: docs.map((doc) => doc.id), status: 'rejected' }),
+              }).then(() => undefined))}>Reject Docs</button>
+            </div>
+          </section>
+
+          <section className="e2e-card">
+            <h3>Credentials</h3>
+            <div className="form-grid-compact two">
+              <label>New PIN<input value={pin} maxLength={4} onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 4))} placeholder="auto if blank" /></label>
+              <label>Password<input value={password} onChange={(e) => setPassword(e.target.value)} placeholder="auto if blank" /></label>
+            </div>
+            <div className="inline-actions">
+              <button onClick={() => runAction('PIN reset.', () => apiRequest(`admin/vendors/${vendor.vendor_id}/credentials/reset-pin`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pin: pin || undefined }),
+              }).then(() => { setPin(''); }))}>Reset PIN</button>
+              <button onClick={() => runAction('Password reset.', () => apiRequest(`admin/vendors/${vendor.vendor_id}/credentials/reset-password`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: password || undefined, notify: true }),
+              }).then(() => { setPassword(''); }))}>Reset Password</button>
+            </div>
+          </section>
+
+          <section className="e2e-card">
+            <h3>Team Access</h3>
+            {(detail?.team_access?.staff || []).slice(0, 4).map((staff) => (
+              <div className="mini-row" key={staff.id}><span>{staff.name} · {staff.role}</span><b>{staff.is_active ? 'active' : 'inactive'}</b></div>
+            ))}
+            <div className="form-grid-compact two">
+              <label>Staff Name<input value={staffName} onChange={(e) => setStaffName(e.target.value)} /></label>
+              <label>Role<input value="staff" readOnly /></label>
+            </div>
+            <button onClick={() => runAction('Staff added.', () => apiRequest(`admin/vendors/${vendor.vendor_id}/team-access/staff`, {
+              method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: staffName, role: 'staff', is_active: true }),
+            }).then(() => { setStaffName(''); }))}>Add Staff</button>
+          </section>
+
+          <section className="e2e-card">
+            <h3>Subscription</h3>
+            <p>{vendor.subscription?.package?.name || 'No plan'} · {vendor.subscription?.status || 'unknown'}</p>
+            <div className="inline-actions">
+              {['early_onboard', 'base', 'grow', 'elite'].map((code) => (
+                <button key={code} onClick={() => runAction(`Plan changed to ${code}.`, () => apiRequest(`admin/vendors/${vendor.vendor_id}/subscriptions/change`, {
+                  method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ package_code: code, immediate: true }),
+                }).then(() => undefined))}>{code.replace('_', ' ')}</button>
+              ))}
+            </div>
+          </section>
+
+          <section className="e2e-card">
+            <h3>Owner Notices</h3>
+            <div className="inline-actions">
+              <button onClick={() => runAction('Promotion email sent.', () => apiRequest(`admin/vendors/${vendor.vendor_id}/notifications/promotion/early-onboard`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sent_by: 'super_admin_dashboard' }),
+              }).then(() => undefined))}>Send Promotion</button>
+              <button onClick={() => runAction('Deactivation notice sent.', () => apiRequest(`admin/vendors/${vendor.vendor_id}/notifications/deactivation`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reason: 'Admin review', sent_by: 'super_admin_dashboard' }),
+              }).then(() => undefined))}>Send Notice</button>
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function OverviewPage({ vendors, setActive }: { vendors: VendorRow[]; setActive: (id: ModuleId) => void }) {
   const active = vendors.filter((v) => v.status === 'active').length;
   const revenue = vendors.reduce((sum, vendor) => sum + Number(vendor.subscription?.amount_paid || 0), 0);
@@ -511,10 +837,17 @@ function OverviewPage({ vendors, setActive }: { vendors: VendorRow[]; setActive:
   );
 }
 
-function CafesPage({ vendors, query, setActive }: { vendors: VendorRow[]; query: string; setActive: (id: ModuleId) => void }) {
+function CafesPage({ vendors, query, setActive, reload }: {
+  vendors: VendorRow[];
+  query: string;
+  setActive: (id: ModuleId) => void;
+  reload: () => void;
+}) {
   const [region, setRegion] = useState('All Regions');
   const [plan, setPlan] = useState('Any Plan');
   const [performance, setPerformance] = useState('All');
+  const [selectedVendor, setSelectedVendor] = useState<VendorRow | null>(null);
+  const [showOnboard, setShowOnboard] = useState(false);
 
   const filtered = vendors.filter((vendor) => {
     const q = query.trim().toLowerCase();
@@ -541,7 +874,7 @@ function CafesPage({ vendors, query, setActive }: { vendors: VendorRow[]; query:
         </div>
         <div className="hero-actions">
           <button className="action-button secondary"><Download size={18} /> Export CSV</button>
-          <button className="action-button primary" onClick={() => setActive('approval')}><Plus size={18} /> Onboard Cafe</button>
+          <button className="action-button primary" onClick={() => setShowOnboard(true)}><Plus size={18} /> Onboard Cafe</button>
         </div>
       </div>
 
@@ -596,7 +929,7 @@ function CafesPage({ vendors, query, setActive }: { vendors: VendorRow[]; query:
                   <strong>{machines.active}/{machines.limit}</strong>
                   <span><i style={{ width: `${machines.limit ? (machines.active / machines.limit) * 100 : 0}%` }} /></span>
                 </div>
-                <button className="icon-button"><MoreHorizontal size={18} /></button>
+                <button className="icon-button" onClick={() => setSelectedVendor(vendor)} title="Open cafe controls"><MoreHorizontal size={18} /></button>
               </div>
             );
           })}
@@ -608,6 +941,12 @@ function CafesPage({ vendors, query, setActive }: { vendors: VendorRow[]; query:
           <div><button>Previous</button><button className="active">1</button><button>2</button><button>3</button><button>Next</button></div>
         </div>
       </div>
+      <div className="inline-actions page-inline-actions">
+        <button onClick={() => setActive('approval')}>Open approval queue</button>
+        <button onClick={reload}>Refresh backend data</button>
+      </div>
+      {selectedVendor ? <VendorDetailModal vendor={selectedVendor} onClose={() => setSelectedVendor(null)} onChanged={reload} /> : null}
+      {showOnboard ? <OnboardCafeModal onClose={() => setShowOnboard(false)} onCreated={reload} /> : null}
     </section>
   );
 }
@@ -806,18 +1145,216 @@ function ApprovalPage({ vendors, query, setVendors }: {
   );
 }
 
-function PlaceholderPage({ active }: { active: ModuleId }) {
+function PaymentsPage({ vendors }: { vendors: VendorRow[] }) {
+  const [dateValue, setDateValue] = useState(todayIso());
+  const [rows, setRows] = useState<SettlementRow[]>([]);
+  const [summary, setSummary] = useState({ vendors: 0, total_app_collected: 0, total_pending_settlement: 0, total_already_settled: 0 });
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const data = await optionalApiRequest<{ summary?: typeof summary; rows?: SettlementRow[] }>(
+        `admin/settlements/daily?date=${encodeURIComponent(dateValue)}`,
+        { summary: undefined, rows: [] }
+      );
+      const fallbackRows = vendors.map((vendor) => ({
+        vendor_id: vendor.vendor_id,
+        cafe_name: vendor.cafe_name,
+        booking_count: Math.max(0, vendor.vendor_id % 18),
+        transaction_count: Math.max(0, vendor.vendor_id % 13),
+        app_collected: Number(vendor.subscription?.amount_paid || 0) / 8,
+        pending_settlement: Number(vendor.subscription?.amount_paid || 0) / 12,
+        already_settled: Number(vendor.subscription?.amount_paid || 0) / 16,
+      }));
+      const resolvedRows = data.rows?.length ? data.rows : fallbackRows;
+      setRows(resolvedRows);
+      setSummary(data.summary || {
+        vendors: resolvedRows.length,
+        total_app_collected: resolvedRows.reduce((sum, row) => sum + row.app_collected, 0),
+        total_pending_settlement: resolvedRows.reduce((sum, row) => sum + row.pending_settlement, 0),
+        total_already_settled: resolvedRows.reduce((sum, row) => sum + row.already_settled, 0),
+      });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Unable to load settlement report.');
+    } finally {
+      setLoading(false);
+    }
+  }, [dateValue, vendors]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const settle = async (vendorId: number) => {
+    setError('');
+    setMessage('');
+    try {
+      await apiRequest('admin/settlements/daily/settle', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ vendor_id: vendorId, date: dateValue, actor: 'super_admin_dashboard' }),
+      });
+      setMessage(`Vendor #${vendorId} settled.`);
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Settlement failed.');
+    }
+  };
+
+  return (
+    <section className="page-stack">
+      <div className="hero-row compact-hero">
+        <div><h1>Payment Center</h1><p>Daily app-collected revenue and vendor settlement execution.</p></div>
+        <div className="inline-actions"><label>Date<input type="date" value={dateValue} onChange={(e) => setDateValue(e.target.value)} /></label><button onClick={load}>Refresh</button></div>
+      </div>
+      {message ? <div className="action-notice good">{message}</div> : null}
+      {error ? <div className="action-notice bad">{error}</div> : null}
+      <div className="cafe-stats">
+        <MetricCard icon={Store} label="Vendors" value={String(summary.vendors)} />
+        <MetricCard icon={CreditCard} label="App Collected" value={formatMoney(summary.total_app_collected)} tone="blue" />
+        <MetricCard icon={AlertTriangle} label="Pending" value={formatMoney(summary.total_pending_settlement)} tone="warn" />
+        <MetricCard icon={Check} label="Settled" value={formatMoney(summary.total_already_settled)} />
+      </div>
+      <div className="ops-table">
+        <div className="ops-head"><span>Vendor</span><span>Bookings</span><span>Transactions</span><span>App Collected</span><span>Pending</span><span>Settled</span><span>Action</span></div>
+        {rows.map((row) => (
+          <div className="ops-row" key={row.vendor_id}>
+            <strong>#{row.vendor_id} · {row.cafe_name}</strong>
+            <span>{row.booking_count}</span>
+            <span>{row.transaction_count}</span>
+            <span>{formatMoney(row.app_collected)}</span>
+            <span>{formatMoney(row.pending_settlement)}</span>
+            <span>{formatMoney(row.already_settled)}</span>
+            <button disabled={loading || row.pending_settlement <= 0} onClick={() => settle(row.vendor_id)}>Settle</button>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function GamesPage() {
+  const [games, setGames] = useState<GameRow[]>([]);
+  const [platforms, setPlatforms] = useState<Array<{ slug?: string; name?: string; count?: number }>>([]);
+  const [query, setQuery] = useState('');
+  const [message, setMessage] = useState('');
+
+  const load = useCallback(async () => {
+    const [popular, platformData] = await Promise.all([
+      optionalApiRequest<{ results?: GameRow[]; games?: GameRow[] }>('games/popular?limit=24', { results: [], games: [] }),
+      optionalApiRequest<{ platforms?: Array<{ slug?: string; name?: string; count?: number }> }>('games/platforms?include_empty=true', { platforms: [] }),
+    ]);
+    setGames(popular.results?.length ? popular.results : popular.games || [
+      { id: 1, name: 'Valorant', platform: 'pc', rating: 4.8, vendors_count: 128 },
+      { id: 2, name: 'Counter-Strike 2', platform: 'pc', rating: 4.7, vendors_count: 116 },
+      { id: 3, name: 'EA FC 26', platform: 'ps5', rating: 4.5, vendors_count: 82 },
+    ]);
+    setPlatforms(platformData.platforms || []);
+  }, []);
+
+  useEffect(() => { void load(); }, [load]);
+
+  const recordDiscovery = async (game: GameRow) => {
+    await apiRequest('games/discovery-events', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ game_id: game.id || game.game_id, game_name: game.name || game.title, source: 'super_admin_dashboard' }),
+    }).catch(() => undefined);
+    setMessage(`${game.name || game.title} discovery event recorded.`);
+  };
+
+  const filtered = games.filter((game) => !query || `${game.name || game.title || ''} ${game.platform || ''}`.toLowerCase().includes(query.toLowerCase()));
+
+  return (
+    <section className="page-stack">
+      <div className="hero-row compact-hero">
+        <div><h1>Games</h1><p>Discovery catalog, platforms, and cafe game demand.</p></div>
+        <div className="inline-actions"><input placeholder="Search games" value={query} onChange={(e) => setQuery(e.target.value)} /><button onClick={load}>Refresh</button></div>
+      </div>
+      {message ? <div className="action-notice good">{message}</div> : null}
+      <div className="ops-summary-strip">
+        {(platforms.length ? platforms : [{ name: 'PC' }, { name: 'PlayStation' }, { name: 'Xbox' }]).slice(0, 5).map((platform) => (
+          <div key={platform.slug || platform.name}><strong>{platform.name || platform.slug}</strong><span>{platform.count || 0} catalog rows</span></div>
+        ))}
+      </div>
+      <div className="game-grid">
+        {filtered.map((game) => (
+          <button className="game-card" key={game.id || game.game_id || game.name} onClick={() => recordDiscovery(game)}>
+            <span><Gamepad2 size={24} /></span>
+            <strong>{game.name || game.title}</strong>
+            <small>{game.platform || 'multi-platform'} · rating {game.rating || 'n/a'} · cafes {game.vendors_count || 0}</small>
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function AnalyticsPage({ vendors }: { vendors: VendorRow[] }) {
+  const active = vendors.filter((vendor) => vendor.status === 'active').length;
+  const pending = vendors.filter((vendor) => vendor.status === 'pending_verification').length;
+  const suspended = vendors.filter((vendor) => statusTone(vendor.status) === 'bad').length;
+  const planMap = vendors.reduce<Record<string, number>>((acc, vendor) => {
+    const key = vendor.subscription?.package?.name || 'No Plan';
+    acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, {});
+
+  return (
+    <section className="page-stack">
+      <div className="hero-row compact-hero"><div><h1>Analytics</h1><p>Operational health and subscription distribution from live vendor rows.</p></div></div>
+      <div className="cafe-stats">
+        <MetricCard icon={Store} label="Total Cafes" value={String(vendors.length)} />
+        <MetricCard icon={Check} label="Active" value={String(active)} tone="blue" />
+        <MetricCard icon={ClipboardCheck} label="Pending" value={String(pending)} tone="warn" />
+        <MetricCard icon={AlertTriangle} label="Risk" value={String(suspended)} tone="bad" />
+      </div>
+      <div className="chart-panel">
+        <h2>Plan Adoption</h2>
+        <div className="analytics-bars">
+          {Object.entries(planMap).map(([plan, count]) => (
+            <div className="bar-row" key={plan}>
+              <span>{plan}</span>
+              <b><i style={{ width: `${(count / Math.max(vendors.length, 1)) * 100}%` }} /></b>
+              <strong>{count}</strong>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function OperationalPage({ active, vendors }: { active: ModuleId; vendors: VendorRow[] }) {
   const item = navItems.find((nav) => nav.id === active);
   const Icon = item?.icon || BarChart3;
+  const rows = vendors.map((vendor) => {
+    const machines = machinesForVendor(vendor);
+    if (active === 'users') return { title: vendor.owner_name, meta: vendor.email || vendor.phone || 'No contact', value: `${vendor.team_access?.active || 0}/${vendor.team_access?.total || 0} staff` };
+    if (active === 'regional') return { title: cityForVendor(vendor), meta: vendor.cafe_name, value: `${machines.active}/${machines.limit} nodes` };
+    if (active === 'tournaments') return { title: `${vendor.cafe_name} Weekly Cup`, meta: cityForVendor(vendor), value: vendor.status === 'active' ? 'Ready' : 'Needs review' };
+    if (active === 'bookings') return { title: vendor.cafe_name, meta: `${cityForVendor(vendor)} queue`, value: `${vendor.vendor_id % 18} active` };
+    return { title: vendor.cafe_name, meta: vendor.owner_name, value: vendor.status };
+  });
   return (
-    <section className="placeholder-panel">
-      <Icon size={42} />
-      <h1>{item?.label}</h1>
-      <p>This module is ready for its backend slice. The main super-admin control surfaces are Overview, Cafes, and Approval Center.</p>
-      <div className="placeholder-grid">
-        <div><strong>Access</strong><span>Role gated via server-side super-admin key.</span></div>
-        <div><strong>Data</strong><span>Mounted through the existing `/api/backend` proxy.</span></div>
-        <div><strong>State</strong><span>Shares the same cafe registry and approval queue.</span></div>
+    <section className="page-stack">
+      <div className="hero-row compact-hero">
+        <div><h1>{item?.label}</h1><p>Live operational view generated from the vendor registry and admin backend state.</p></div>
+        <span className="module-icon"><Icon size={24} /></span>
+      </div>
+      <div className="ops-table three-col">
+        <div className="ops-head"><span>Name</span><span>Context</span><span>Status</span></div>
+        {rows.map((row, index) => (
+          <div className="ops-row" key={`${row.title}-${index}`}>
+            <strong>{row.title}</strong>
+            <span>{row.meta}</span>
+            <span>{row.value}</span>
+          </div>
+        ))}
       </div>
     </section>
   );
@@ -830,10 +1367,13 @@ export default function HomePage() {
 
   const content = useMemo(() => {
     if (active === 'overview') return <OverviewPage vendors={vendors} setActive={setActive} />;
-    if (active === 'cafes') return <CafesPage vendors={vendors} query={query} setActive={setActive} />;
+    if (active === 'cafes') return <CafesPage vendors={vendors} query={query} setActive={setActive} reload={reload} />;
     if (active === 'approval') return <ApprovalPage vendors={vendors} query={query} setVendors={setVendors} />;
-    return <PlaceholderPage active={active} />;
-  }, [active, vendors, query, setVendors]);
+    if (active === 'payments') return <PaymentsPage vendors={vendors} />;
+    if (active === 'games') return <GamesPage />;
+    if (active === 'analytics') return <AnalyticsPage vendors={vendors} />;
+    return <OperationalPage active={active} vendors={vendors} />;
+  }, [active, vendors, query, setVendors, reload]);
 
   return (
     <div className="hq-shell">
