@@ -635,11 +635,12 @@ function OnboardCafeModal({ onClose, onCreated }: { onClose: () => void; onCreat
   );
 }
 
-function VendorDetailModal({ vendor, onClose, onChanged, embedded = false }: {
+type CafeDetailTab = 'profile' | 'documents' | 'operations' | 'team' | 'plan' | 'bookings' | 'notices';
+
+function VendorDetailModal({ vendor, onClose, onChanged }: {
   vendor: VendorRow;
   onClose: () => void;
   onChanged: () => void;
-  embedded?: boolean;
 }) {
   const [detail, setDetail] = useState<VendorDetail | null>(null);
   const [loading, setLoading] = useState(false);
@@ -650,6 +651,7 @@ function VendorDetailModal({ vendor, onClose, onChanged, embedded = false }: {
   const [staffName, setStaffName] = useState('');
   const [ownerMessage, setOwnerMessage] = useState('');
   const [bookingQueue, setBookingQueue] = useState<BookingQueueRow[]>([]);
+  const [activeTab, setActiveTab] = useState<CafeDetailTab>('profile');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -697,23 +699,57 @@ function VendorDetailModal({ vendor, onClose, onChanged, embedded = false }: {
   };
 
   const docs = detail?.documents || [];
+  const contact = detail?.contact;
+  const address = detail?.address;
+  const fullAddress = [address?.addressLine1, address?.addressLine2, address?.state, address?.pincode, address?.country]
+    .filter(Boolean)
+    .join(', ') || 'Address not provided';
+  const tabs: Array<{ id: CafeDetailTab; label: string }> = [
+    { id: 'profile', label: 'Cafe profile' },
+    { id: 'documents', label: `Documents${docs.length ? ` (${docs.length})` : ''}` },
+    { id: 'operations', label: 'Operations' },
+    { id: 'team', label: 'Team' },
+    { id: 'plan', label: 'Plan' },
+    { id: 'bookings', label: `Bookings${bookingQueue.length ? ` (${bookingQueue.length})` : ''}` },
+    { id: 'notices', label: 'Messages' },
+  ];
 
   return (
-    <div className={embedded ? 'cafe-detail-panel' : 'modal-backdrop'} onClick={embedded ? undefined : onClose}>
-      <div className={classNames('modal-panel', 'detail-modal', embedded && 'embedded-detail')} onClick={(event) => event.stopPropagation()}>
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal-panel detail-modal cafe-detail-modal" onClick={(event) => event.stopPropagation()}>
         <div className="modal-head">
           <div>
             <h2>{detail?.cafe_name || vendor.cafe_name}</h2>
-            <p>Vendor #{vendor.vendor_id} · {detail?.owner_name || vendor.owner_name}</p>
+            <p>Vendor #{vendor.vendor_id} · {detail?.owner_name || vendor.owner_name} · {detail?.status || vendor.status}</p>
           </div>
-          <button className="icon-button" onClick={onClose}><X size={18} /></button>
+          <button className="icon-button" onClick={onClose} title="Close cafe details"><X size={18} /></button>
         </div>
         {loading ? <div className="action-notice">Loading vendor detail...</div> : null}
         {message ? <div className="action-notice good">{message}</div> : null}
         {error ? <div className="action-notice bad">{error}</div> : null}
 
-        <div className="e2e-grid">
-          <section className="e2e-card">
+        <div className="detail-tabs" role="tablist" aria-label="Cafe management sections">
+          {tabs.map((tab) => <button key={tab.id} role="tab" aria-selected={activeTab === tab.id} className={activeTab === tab.id ? 'active' : ''} onClick={() => setActiveTab(tab.id)}>{tab.label}</button>)}
+        </div>
+
+        <div className="detail-tab-content">
+          {activeTab === 'profile' ? <section className="profile-card">
+            <div className="profile-summary">
+              <span className="initials">{(detail?.cafe_name || vendor.cafe_name).split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toUpperCase()}</span>
+              <div><h3>{detail?.cafe_name || vendor.cafe_name}</h3><p>{detail?.description || 'Cafe profile and owner contact record.'}</p></div>
+              <span className={classNames('status-pill', statusTone(detail?.status || vendor.status))}>{(detail?.status || vendor.status).replaceAll('_', ' ')}</span>
+            </div>
+            <div className="profile-details-grid">
+              <div><span>Cafe name</span><strong>{detail?.cafe_name || vendor.cafe_name}</strong></div>
+              <div><span>Owner</span><strong>{detail?.owner_name || vendor.owner_name || 'Not provided'}</strong></div>
+              <div><span>Address</span><strong>{fullAddress}</strong></div>
+              <div><span>Contact number</span><strong>{contact?.phone || vendor.phone || 'Not provided'}</strong></div>
+              <div><span>Contact email</span><strong>{contact?.email || detail?.account_email || vendor.email || 'Not provided'}</strong></div>
+              <div><span>Account email</span><strong>{detail?.account_email || vendor.email || 'Not provided'}</strong></div>
+            </div>
+          </section> : null}
+
+          {activeTab === 'operations' ? <section className="e2e-card">
             <h3>Status</h3>
             <p>{detail?.status || vendor.status}</p>
             <div className="inline-actions">
@@ -725,9 +761,9 @@ function VendorDetailModal({ vendor, onClose, onChanged, embedded = false }: {
               }).then(() => undefined))}>Suspend</button>
               <button className="danger" onClick={() => runAction('Cafe deboarded.', () => apiRequest(`admin/vendors/${vendor.vendor_id}`, { method: 'DELETE' }).then(() => undefined))}><Trash2 size={14} /> Deboard</button>
             </div>
-          </section>
+          </section> : null}
 
-          <section className="e2e-card">
+          {activeTab === 'documents' ? <section className="e2e-card">
             <h3>Documents</h3>
             {docs.length ? docs.map((doc) => (
               <div className="mini-row" key={doc.id}>
@@ -747,9 +783,9 @@ function VendorDetailModal({ vendor, onClose, onChanged, embedded = false }: {
                 body: JSON.stringify({ document_ids: docs.map((doc) => doc.id), status: 'rejected' }),
               }).then(() => undefined))}>Reject Docs</button>
             </div>
-          </section>
+          </section> : null}
 
-          <section className="e2e-card">
+          {activeTab === 'operations' ? <section className="e2e-card">
             <h3>Credentials</h3>
             <div className="form-grid-compact two">
               <label>New PIN<input value={pin} maxLength={4} onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 4))} placeholder="auto if blank" /></label>
@@ -763,9 +799,9 @@ function VendorDetailModal({ vendor, onClose, onChanged, embedded = false }: {
                 method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: password || undefined, notify: true }),
               }).then(() => { setPassword(''); }))}>Reset Password</button>
             </div>
-          </section>
+          </section> : null}
 
-          <section className="e2e-card">
+          {activeTab === 'team' ? <section className="e2e-card">
             <h3>Team Access</h3>
             {(detail?.team_access?.staff || []).slice(0, 4).map((staff) => (
               <div className="mini-row" key={staff.id}><span>{staff.name} · {staff.role}</span><div className="inline-actions"><b>{staff.is_active ? 'active' : 'inactive'}</b><button onClick={() => runAction(`Staff ${staff.is_active ? 'disabled' : 'enabled'}.`, () => apiRequest(`admin/vendors/${vendor.vendor_id}/team-access/staff/${staff.id}`, {
@@ -779,9 +815,9 @@ function VendorDetailModal({ vendor, onClose, onChanged, embedded = false }: {
             <button onClick={() => runAction('Staff added.', () => apiRequest(`admin/vendors/${vendor.vendor_id}/team-access/staff`, {
               method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: staffName, role: 'staff', is_active: true }),
             }).then(() => { setStaffName(''); }))}>Add Staff</button>
-          </section>
+          </section> : null}
 
-          <section className="e2e-card">
+          {activeTab === 'plan' ? <section className="e2e-card">
             <h3>Subscription</h3>
             <p>{vendor.subscription?.package?.name || 'No plan'} · {vendor.subscription?.status || 'unknown'}</p>
             <div className="inline-actions">
@@ -792,14 +828,14 @@ function VendorDetailModal({ vendor, onClose, onChanged, embedded = false }: {
               ))}
               <button onClick={() => runAction('Default plan provisioned.', () => apiRequest(`admin/vendors/${vendor.vendor_id}/subscriptions/provision-default`, { method: 'POST' }).then(() => undefined))}>Default Plan</button>
             </div>
-          </section>
+          </section> : null}
 
-          <section className="e2e-card booking-queue-card">
+          {activeTab === 'bookings' ? <section className="e2e-card booking-queue-card">
             <h3>Booking Queue</h3>
             {bookingQueue.length ? bookingQueue.slice(0, 6).map((entry) => <div className="mini-row" key={entry.id}><span>#{entry.booking_id || entry.id} · Console {entry.console_id}</span><select value={entry.status} onChange={(event) => runAction('Queue entry updated.', () => apiRequest(`admin/vendors/${vendor.vendor_id}/booking-queue/${entry.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: event.target.value }) }).then(() => undefined))}><option value="queued">Queued</option><option value="started">Started</option><option value="completed">Completed</option><option value="cancelled">Cancelled</option></select></div>) : <p>No queue entries for this cafe.</p>}
-          </section>
+          </section> : null}
 
-          <section className="e2e-card">
+          {activeTab === 'notices' ? <section className="e2e-card">
             <h3>Owner Notices</h3>
             <label>Message<textarea value={ownerMessage} onChange={(event) => setOwnerMessage(event.target.value)} placeholder="Add an optional note for the cafe owner" /></label>
             <div className="inline-actions">
@@ -810,7 +846,7 @@ function VendorDetailModal({ vendor, onClose, onChanged, embedded = false }: {
                 method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reason: ownerMessage || 'Admin review', sent_by: 'super_admin_dashboard' }),
               }).then(() => undefined))}>Send Notice</button>
             </div>
-          </section>
+          </section> : null}
         </div>
       </div>
     </div>
@@ -941,7 +977,6 @@ function CafesPage({ vendors, query, setActive, reload }: {
         <MetricCard icon={Zap} label="Avg. Load" value={`${avgLoad}%`} trend="Optimal" tone="bad" />
       </div>
 
-      <div className="cafe-workspace">
       <div className="registry-panel">
         <div className="filters-row">
           <div className="inline-search"><Search size={16} /><input value={query} readOnly placeholder="Filter by name..." /></div>
@@ -997,13 +1032,12 @@ function CafesPage({ vendors, query, setActive, reload }: {
 
         <div className="pagination-row"><span>{filtered.length} cafes</span></div>
       </div>
-      {selectedVendor ? <VendorDetailModal embedded vendor={selectedVendor} onClose={() => setSelectedVendor(null)} onChanged={reload} /> : <aside className="cafe-detail-empty"><Store size={22} /><strong>Select a cafe</strong><span>Choose a row to manage the cafe.</span></aside>}
-      </div>
       <div className="inline-actions page-inline-actions">
         <button onClick={() => setActive('approval')}>Open approval queue</button>
         <button onClick={reload}>Refresh backend data</button>
       </div>
       {showOnboard ? <OnboardCafeModal onClose={() => setShowOnboard(false)} onCreated={reload} /> : null}
+      {selectedVendor ? <VendorDetailModal vendor={selectedVendor} onClose={() => setSelectedVendor(null)} onChanged={reload} /> : null}
     </section>
   );
 }
