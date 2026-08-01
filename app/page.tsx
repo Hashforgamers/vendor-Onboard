@@ -192,6 +192,8 @@ type SubscriptionRow = {
   package?: { code?: string; name?: string; pc_limit?: number };
 };
 
+type BookingQueueRow = { id: number; booking_id?: number | null; console_id: number; game_id: number; user_id?: number | null; status: string; start_time?: string | null; end_time?: string | null };
+
 const HASH_LOGO_URL = 'https://res.cloudinary.com/dxjjigepf/image/upload/v1774472024/hash_for_gamer_logo_d1v4wc.png';
 
 const navItems: Array<{ id: ModuleId; label: string; icon: React.ComponentType<{ size?: number }> }> = [
@@ -646,13 +648,18 @@ function VendorDetailModal({ vendor, onClose, onChanged }: {
   const [password, setPassword] = useState('');
   const [staffName, setStaffName] = useState('');
   const [ownerMessage, setOwnerMessage] = useState('');
+  const [bookingQueue, setBookingQueue] = useState<BookingQueueRow[]>([]);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      const data = await apiRequest<{ vendor: VendorDetail }>(`admin/vendors/${vendor.vendor_id}`);
+      const [data, queueData] = await Promise.all([
+        apiRequest<{ vendor: VendorDetail }>(`admin/vendors/${vendor.vendor_id}`),
+        optionalApiRequest<{ queue?: BookingQueueRow[] }>(`admin/vendors/${vendor.vendor_id}/booking-queue`, { queue: [] }),
+      ]);
       setDetail(data.vendor);
+      setBookingQueue(queueData.queue || []);
     } catch (e) {
       setDetail(fallbackDetails[vendor.vendor_id] || {
         vendor_id: vendor.vendor_id,
@@ -784,6 +791,11 @@ function VendorDetailModal({ vendor, onClose, onChanged }: {
               ))}
               <button onClick={() => runAction('Default plan provisioned.', () => apiRequest(`admin/vendors/${vendor.vendor_id}/subscriptions/provision-default`, { method: 'POST' }).then(() => undefined))}>Default Plan</button>
             </div>
+          </section>
+
+          <section className="e2e-card booking-queue-card">
+            <h3>Booking Queue</h3>
+            {bookingQueue.length ? bookingQueue.slice(0, 6).map((entry) => <div className="mini-row" key={entry.id}><span>#{entry.booking_id || entry.id} · Console {entry.console_id}</span><select value={entry.status} onChange={(event) => runAction('Queue entry updated.', () => apiRequest(`admin/vendors/${vendor.vendor_id}/booking-queue/${entry.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: event.target.value }) }).then(() => undefined))}><option value="queued">Queued</option><option value="started">Started</option><option value="completed">Completed</option><option value="cancelled">Cancelled</option></select></div>) : <p>No queue entries for this cafe.</p>}
           </section>
 
           <section className="e2e-card">
