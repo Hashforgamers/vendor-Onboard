@@ -1169,24 +1169,26 @@ function ApprovalPage({ vendors, query, setVendors }: {
             <h2>Active Queue</h2>
             <button className="icon-button"><SlidersHorizontal size={18} /></button>
           </div>
-          {filtered.map((vendor, index) => (
-            <button
-              key={vendor.vendor_id}
-              className={classNames('queue-card', activeVendor?.vendor_id === vendor.vendor_id && 'active')}
-              onClick={() => setSelectedId(vendor.vendor_id)}
-            >
-              <div className="queue-title">
-                <div><strong>{vendor.cafe_name}</strong><span>{cityForVendor(vendor)}, {index % 2 ? 'CA' : 'Central'}</span></div>
-                <em>{index === 0 ? 'Priority' : 'Standard'}</em>
-              </div>
-              <div className="doc-lines">
-                <span>License Status <b className={classNames('doc-status', statusTone(vendor.status))}>{vendor.status === 'pending_verification' ? 'Pending' : 'Submitted'}</b></span>
-                <span>GST/VAT <b className={classNames('doc-status', (vendor.documents?.pending || 0) > 1 ? 'bad' : 'good')}>{(vendor.documents?.pending || 0) > 1 ? 'Flagged' : 'Verified'}</b></span>
-              </div>
-              <span className="review-button">Review Application</span>
-            </button>
-          ))}
-          {!filtered.length ? <div className="empty-queue">No pending approvals.</div> : null}
+          <div className="queue-list" tabIndex={0} aria-label="Pending cafe applications">
+            {filtered.map((vendor, index) => (
+              <button
+                key={vendor.vendor_id}
+                className={classNames('queue-card', activeVendor?.vendor_id === vendor.vendor_id && 'active')}
+                onClick={() => setSelectedId(vendor.vendor_id)}
+              >
+                <div className="queue-title">
+                  <div><strong>{vendor.cafe_name}</strong><span>{cityForVendor(vendor)}, {index % 2 ? 'CA' : 'Central'}</span></div>
+                  <em>{index === 0 ? 'Priority' : 'Standard'}</em>
+                </div>
+                <div className="doc-lines">
+                  <span>License Status <b className={classNames('doc-status', statusTone(vendor.status))}>{vendor.status === 'pending_verification' ? 'Pending' : 'Submitted'}</b></span>
+                  <span>GST/VAT <b className={classNames('doc-status', (vendor.documents?.pending || 0) > 1 ? 'bad' : 'good')}>{(vendor.documents?.pending || 0) > 1 ? 'Flagged' : 'Verified'}</b></span>
+                </div>
+                <span className="review-button">Review Application</span>
+              </button>
+            ))}
+            {!filtered.length ? <div className="empty-queue">No pending approvals.</div> : null}
+          </div>
         </div>
 
         <div className="review-panel">

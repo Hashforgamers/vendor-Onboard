@@ -2543,6 +2543,85 @@ h3 { font-size: 14px; font-weight: 650; }
   .overview-stack h1 { font-size: 24px; }
 }
 
+/* Super-admin light workspace: operational content stays calm and readable. */
+:root {
+  --bg: #f4f6f8;
+  --panel: #ffffff;
+  --panel-2: #f7f8fa;
+  --panel-3: #eef1f5;
+  --line: #e2e7ee;
+  --line-strong: #d4dbe5;
+  --text: #172033;
+  --muted: #657187;
+  --subtle: #8590a2;
+  --lavender: #9ca9ff;
+  --blue: #187bb5;
+  --good: #19785e;
+}
+
+html, body { background: var(--bg); color: var(--text); }
+.hq-shell { background: var(--bg); }
+.hq-main { background: var(--bg); min-height: 100vh; }
+.hq-topbar { background: #fff; border-bottom-color: var(--line); }
+.search-box, .inline-search { background: #f7f8fa; border-color: var(--line); color: var(--muted); }
+.search-box input, .inline-search input { color: var(--text); }
+.search-box input::placeholder, .inline-search input::placeholder { color: var(--subtle); }
+kbd { background: #e9edf3; color: #536075; }
+.icon-button { color: #46536a; }
+.icon-button:hover { background: #eef2f6; }
+.admin-profile { border-left-color: var(--line); }
+.admin-profile span { color: var(--muted); }
+h1 { color: var(--text); text-shadow: none; }
+.hero-row p, .approval-top p { color: var(--muted); }
+
+.metric-card, .chart-panel, .registry-panel, .review-panel, .e2e-card, .ops-table, .modal-panel { background: #fff; border-color: var(--line); }
+.metric-card { box-shadow: 0 1px 2px rgba(19, 32, 51, .04); }
+.metric-icon, .store-badge, .module-icon { background: #edf3fa; color: #28688f; }
+.action-button.secondary, .inline-actions button, .ops-row button, .e2e-card button { background: #fff; border-color: var(--line-strong); color: #26334a; }
+.form-grid-compact input, .form-grid-compact select, .e2e-card > label input, .e2e-card > label textarea, .hero-row > select, .ops-row select { background: #fff; border-color: var(--line-strong); color: var(--text); }
+.filters-row { background: #f8f9fb; border-bottom: 1px solid var(--line); }
+.filters-row select, .segmented button, .performance-toggle button, .pagination-row button { background: #fff; border-color: var(--line-strong); color: var(--text); }
+.table-head { background: #f7f8fa; color: #718096; }
+.cafe-row { border-top-color: var(--line); }
+.cafe-row:hover { background: #f8fafc; }
+.initials { background: #eef1ff; color: #4f5ac4; }
+.machine-cell span { background: #e3e9ef; }
+
+.summary-cards div { background: #fff; border-color: var(--line); }
+.summary-cards span { color: var(--muted); }
+.queue-card { background: #fff; color: var(--text); border-color: var(--line); }
+.queue-card:hover { border-color: #b9c7d7; }
+.queue-card.active { border-color: #91a2ff; box-shadow: inset 3px 0 0 #7184f5, 0 0 0 2px rgba(113, 132, 245, .09); }
+.queue-title span, .review-header p, .document-details dt { color: var(--muted); }
+.queue-title em { background: #eef1f7; color: #59657b; }
+.review-button, .queue-card:not(.active) .review-button { background: #eef1ff; color: #3e4eb4; }
+.review-header { background: #fff; border-bottom: 1px solid var(--line); }
+.tabs-row { background: #f8f9fb; border-bottom: 1px solid var(--line); }
+.tabs-row button { color: #657187; }
+.tabs-row button.active { color: #3546a8; border-color: #7184f5; }
+.document-layout h3, .document-details dd { color: var(--text); }
+.audit-note { background: #fff8ed; border-color: #f1d1a7; color: #a65a14; }
+.audit-note p { color: #755436; }
+.backend-banner { background: #fff8ed; border-color: #f2d3aa; color: #8f561e; }
+
+.hq-sidebar { background: #121a2a; border-right-color: #202b3d; }
+.hq-brand strong { color: #f4f6ff; }
+.hq-nav-button { color: #bdc8d9; }
+.hq-nav-button:hover { background: #1c2940; color: #fff; }
+.hq-nav-button.active { background: #22334f; box-shadow: inset 3px 0 0 #8cb7e7; }
+.system-card { background: #18243a; border-color: #2c3a52; }
+.system-card strong { color: #c9d3e5; }
+.system-card span { color: #ecf2fb; }
+
+.queue-column { grid-template-rows: auto minmax(0, 1fr); height: calc(100dvh - 230px); min-height: 420px; }
+.queue-list { min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; display: grid; align-content: start; gap: 10px; padding: 1px 8px 1px 1px; }
+.queue-list:focus-visible { outline: 2px solid #7184f5; outline-offset: 3px; }
+
+@media (max-width: 900px) {
+  .queue-column { height: auto; min-height: 0; }
+  .queue-list { max-height: 52vh; }
+}
+
 .cafe-table {
   max-height: min(54vh, 560px);
   overflow: auto;
