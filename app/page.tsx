@@ -5,18 +5,15 @@ import Image from 'next/image';
 import {
   AlertTriangle,
   BarChart3,
-  Bell,
   Check,
   ClipboardCheck,
   CreditCard,
   Download,
-  FileText,
   Gamepad2,
   Grid2X2,
   HelpCircle,
   Handshake,
   Info,
-  LogOut,
   Mail,
   Monitor,
   MoreHorizontal,
@@ -24,7 +21,6 @@ import {
   Package,
   RefreshCcw,
   Search,
-  Settings,
   SlidersHorizontal,
   Store,
   Trash2,
@@ -58,6 +54,8 @@ type VendorRow = {
   status: string;
   email?: string;
   phone?: string;
+  created_at?: string | null;
+  address?: { addressLine1?: string | null; addressLine2?: string | null; state?: string | null; country?: string | null };
   documents?: {
     total: number;
     verified: number;
@@ -293,6 +291,9 @@ const fallbackDetails: Record<number, VendorDetail> = {
   },
 };
 
+// Retained as local fixtures for development only; live admin views never render them.
+void [fallbackVendors, fallbackDetails];
+
 async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`/api/backend/${path}`, {
     ...init,
@@ -353,21 +354,11 @@ function statusTone(status: string) {
 }
 
 function cityForVendor(vendor: VendorRow) {
-  const cityMap: Record<number, string> = {
-    99210: 'Seoul',
-    88124: 'Berlin',
-    44091: 'San Francisco',
-    12003: 'Austin',
-    7721: 'Singapore',
-    8842: 'Kyoto',
-  };
-  return cityMap[vendor.vendor_id] || vendor.email?.split('@')[1]?.split('.')[0] || 'Global';
+  return vendor.address?.addressLine2 || vendor.address?.state || vendor.address?.country || 'Not provided';
 }
 
 function machinesForVendor(vendor: VendorRow) {
-  const limit = vendor.subscription?.package?.pc_limit || (vendor.vendor_id % 90) + 35;
-  const active = vendor.status === 'suspended' ? 0 : Math.max(0, limit - (vendor.vendor_id % 7));
-  return { active, limit };
+  return { active: 0, limit: Number(vendor.subscription?.package?.pc_limit || 0) };
 }
 
 function getDocumentUrl(document?: VendorDocument) {
@@ -387,22 +378,22 @@ function isPdfDocument(url: string) {
 }
 
 function useAdminData() {
-  const [vendors, setVendors] = useState<VendorRow[]>(fallbackVendors);
+  const [vendors, setVendors] = useState<VendorRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [usingFallback, setUsingFallback] = useState(true);
+  const [usingFallback, setUsingFallback] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      const data = await apiRequest<{ vendors: VendorRow[] }>('admin/vendors?page=1&per_page=300');
+      const data = await apiRequest<{ vendors: VendorRow[] }>('admin/vendors?page=1&per_page=100');
       const rows = data.vendors || [];
-      setVendors(rows.length ? rows : fallbackVendors);
-      setUsingFallback(!rows.length);
+      setVendors(rows);
+      setUsingFallback(false);
     } catch (e) {
-      setVendors(fallbackVendors);
-      setUsingFallback(true);
+      setVendors([]);
+      setUsingFallback(false);
       setError(e instanceof Error ? e.message : 'Backend unavailable');
     } finally {
       setLoading(false);
@@ -448,14 +439,6 @@ function Sidebar({ active, setActive }: { active: ModuleId; setActive: (id: Modu
           <strong>System Status</strong>
           <span><i /> All nodes optimal</span>
         </div>
-        <button className="hq-nav-button">
-          <Settings size={22} />
-          <span>Settings</span>
-        </button>
-        <button className="hq-nav-button logout">
-          <LogOut size={22} />
-          <span>Logout</span>
-        </button>
       </div>
     </aside>
   );
@@ -485,8 +468,6 @@ function Topbar({ active, query, setQuery, reload, loading }: {
         <button className="icon-button" onClick={reload} title="Refresh data">
           <RefreshCcw size={18} className={loading ? 'spin' : ''} />
         </button>
-        <button className="icon-button" title="Notifications"><Bell size={21} /></button>
-        <button className="icon-button" title="Help"><HelpCircle size={21} /></button>
         <div className="admin-profile">
           <div>
             <strong>Alex Rivera</strong>
@@ -652,6 +633,7 @@ function VendorDetailModal({ vendor, onClose, onChanged }: {
   const [ownerMessage, setOwnerMessage] = useState('');
   const [bookingQueue, setBookingQueue] = useState<BookingQueueRow[]>([]);
   const [activeTab, setActiveTab] = useState<CafeDetailTab>('profile');
+  const [promotionPlan, setPromotionPlan] = useState('early_onboard');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -664,18 +646,8 @@ function VendorDetailModal({ vendor, onClose, onChanged }: {
       setDetail(data.vendor);
       setBookingQueue(queueData.queue || []);
     } catch (e) {
-      setDetail(fallbackDetails[vendor.vendor_id] || {
-        vendor_id: vendor.vendor_id,
-        cafe_name: vendor.cafe_name,
-        owner_name: vendor.owner_name,
-        status: vendor.status,
-        account_email: vendor.email,
-        contact: { email: vendor.email, phone: vendor.phone },
-        documents: [],
-        subscriptions: [],
-        team_access: { available: true, staff: [] },
-      });
-      setError(e instanceof Error ? e.message : 'Loaded fallback details.');
+      setDetail(null);
+      setError(e instanceof Error ? e.message : 'Unable to load live cafe details.');
     } finally {
       setLoading(false);
     }
@@ -696,6 +668,9 @@ function VendorDetailModal({ vendor, onClose, onChanged }: {
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Action failed.');
     }
+  };
+  const confirmAndRun = (prompt: string, label: string, fn: () => Promise<void>) => {
+    if (window.confirm(prompt)) void runAction(label, fn);
   };
 
   const docs = detail?.documents || [];
@@ -753,13 +728,13 @@ function VendorDetailModal({ vendor, onClose, onChanged }: {
             <h3>Status</h3>
             <p>{detail?.status || vendor.status}</p>
             <div className="inline-actions">
-              <button onClick={() => runAction('Cafe activated.', () => apiRequest(`admin/vendors/${vendor.vendor_id}/status`, {
+              <button disabled={docs.length < 1 || docs.some((doc) => doc.status !== 'verified')} onClick={() => confirmAndRun('Activate this cafe? All documents must be verified.', 'Cafe activated.', () => apiRequest(`admin/vendors/${vendor.vendor_id}/status`, {
                 method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'active' }),
               }).then(() => undefined))}>Activate</button>
-              <button onClick={() => runAction('Cafe suspended.', () => apiRequest(`admin/vendors/${vendor.vendor_id}/status`, {
+              <button onClick={() => confirmAndRun('Suspend this cafe? Access may be interrupted immediately.', 'Cafe suspended.', () => apiRequest(`admin/vendors/${vendor.vendor_id}/status`, {
                 method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'suspended' }),
               }).then(() => undefined))}>Suspend</button>
-              <button className="danger" onClick={() => runAction('Cafe deboarded.', () => apiRequest(`admin/vendors/${vendor.vendor_id}`, { method: 'DELETE' }).then(() => undefined))}><Trash2 size={14} /> Deboard</button>
+              <button className="danger" onClick={() => confirmAndRun('Deboard this cafe? This action removes its vendor record and cannot be undone.', 'Cafe deboarded.', () => apiRequest(`admin/vendors/${vendor.vendor_id}`, { method: 'DELETE' }).then(() => undefined))}><Trash2 size={14} /> Deboard</button>
             </div>
           </section> : null}
 
@@ -777,7 +752,7 @@ function VendorDetailModal({ vendor, onClose, onChanged }: {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ document_ids: docs.map((doc) => doc.id), status: 'verified' }),
               }).then(() => undefined))}>Verify All</button>
-              <button disabled={!docs.length} onClick={() => runAction('Documents marked rejected.', () => apiRequest(`admin/vendors/${vendor.vendor_id}/documents/verify`, {
+              <button disabled={!docs.length} onClick={() => confirmAndRun('Reject every listed document? The cafe owner will be notified.', 'Documents marked rejected.', () => apiRequest(`admin/vendors/${vendor.vendor_id}/documents/verify`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ document_ids: docs.map((doc) => doc.id), status: 'rejected' }),
@@ -792,10 +767,10 @@ function VendorDetailModal({ vendor, onClose, onChanged }: {
               <label>Password<input value={password} onChange={(e) => setPassword(e.target.value)} placeholder="auto if blank" /></label>
             </div>
             <div className="inline-actions">
-              <button onClick={() => runAction('PIN reset.', () => apiRequest(`admin/vendors/${vendor.vendor_id}/credentials/reset-pin`, {
+              <button onClick={() => confirmAndRun('Reset this cafe PIN? The owner will need the new credentials.', 'PIN reset.', () => apiRequest(`admin/vendors/${vendor.vendor_id}/credentials/reset-pin`, {
                 method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pin: pin || undefined }),
               }).then(() => { setPin(''); }))}>Reset PIN</button>
-              <button onClick={() => runAction('Password reset.', () => apiRequest(`admin/vendors/${vendor.vendor_id}/credentials/reset-password`, {
+              <button onClick={() => confirmAndRun('Reset this cafe password and notify the owner?', 'Password reset.', () => apiRequest(`admin/vendors/${vendor.vendor_id}/credentials/reset-password`, {
                 method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: password || undefined, notify: true }),
               }).then(() => { setPassword(''); }))}>Reset Password</button>
             </div>
@@ -822,11 +797,11 @@ function VendorDetailModal({ vendor, onClose, onChanged }: {
             <p>{vendor.subscription?.package?.name || 'No plan'} · {vendor.subscription?.status || 'unknown'}</p>
             <div className="inline-actions">
               {['early_onboard', 'base', 'grow', 'elite'].map((code) => (
-                <button key={code} onClick={() => runAction(`Plan changed to ${code}.`, () => apiRequest(`admin/vendors/${vendor.vendor_id}/subscriptions/change`, {
+                <button key={code} onClick={() => confirmAndRun(`Change this cafe to the ${code.replace('_', ' ')} plan?`, `Plan changed to ${code}.`, () => apiRequest(`admin/vendors/${vendor.vendor_id}/subscriptions/change`, {
                   method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ package_code: code, immediate: true }),
                 }).then(() => undefined))}>{code.replace('_', ' ')}</button>
               ))}
-              <button onClick={() => runAction('Default plan provisioned.', () => apiRequest(`admin/vendors/${vendor.vendor_id}/subscriptions/provision-default`, { method: 'POST' }).then(() => undefined))}>Default Plan</button>
+              <button onClick={() => confirmAndRun('Provision the default subscription plan for this cafe?', 'Default plan provisioned.', () => apiRequest(`admin/vendors/${vendor.vendor_id}/subscriptions/provision-default`, { method: 'POST' }).then(() => undefined))}>Default Plan</button>
             </div>
           </section> : null}
 
@@ -838,11 +813,12 @@ function VendorDetailModal({ vendor, onClose, onChanged }: {
           {activeTab === 'notices' ? <section className="e2e-card">
             <h3>Owner Notices</h3>
             <label>Message<textarea value={ownerMessage} onChange={(event) => setOwnerMessage(event.target.value)} placeholder="Add an optional note for the cafe owner" /></label>
+            <label>Promotion plan<select value={promotionPlan} onChange={(event) => setPromotionPlan(event.target.value)}><option value="early_onboard">Early Onboard</option><option value="base">Base</option><option value="grow">Grow</option><option value="elite">Elite</option></select></label>
             <div className="inline-actions">
-              <button onClick={() => runAction('Promotion email sent.', () => apiRequest(`admin/vendors/${vendor.vendor_id}/notifications/promotion/early-onboard`, {
-                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sent_by: 'super_admin_dashboard', message: ownerMessage || undefined }),
+              <button onClick={() => confirmAndRun(`Send the ${promotionPlan.replace('_', ' ')} promotion to this cafe?`, 'Promotion email sent.', () => apiRequest(`admin/vendors/${vendor.vendor_id}/notifications/promotion/early-onboard`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sent_by: 'super_admin_dashboard', message: ownerMessage || undefined, package_code: promotionPlan }),
               }).then(() => undefined))}>Send Promotion</button>
-              <button onClick={() => runAction('Deactivation notice sent.', () => apiRequest(`admin/vendors/${vendor.vendor_id}/notifications/deactivation`, {
+              <button onClick={() => confirmAndRun('Send this deactivation notice to the cafe owner?', 'Deactivation notice sent.', () => apiRequest(`admin/vendors/${vendor.vendor_id}/notifications/deactivation`, {
                 method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reason: ownerMessage || 'Admin review', sent_by: 'super_admin_dashboard' }),
               }).then(() => undefined))}>Send Notice</button>
             </div>
@@ -856,29 +832,26 @@ function VendorDetailModal({ vendor, onClose, onChanged }: {
 function OverviewPage({ vendors, setActive }: { vendors: VendorRow[]; setActive: (id: ModuleId) => void }) {
   const active = vendors.filter((v) => v.status === 'active').length;
   const revenue = vendors.reduce((sum, vendor) => sum + Number(vendor.subscription?.amount_paid || 0), 0);
-  const machines = vendors.reduce((sum, vendor) => sum + machinesForVendor(vendor).active, 0);
   const capacity = vendors.reduce((sum, vendor) => sum + machinesForVendor(vendor).limit, 0);
-  const load = capacity ? Math.round((machines / capacity) * 100) : 0;
 
   return (
     <section className="page-stack overview-stack">
       <div className="hero-row">
         <div>
           <h1>Network Overview</h1>
-          <p>Real-time status of your gaming ecosystem across 12 regions.</p>
+          <p>Live operational status from the cafe registry.</p>
         </div>
         <div className="hero-actions">
-          <button className="action-button secondary"><FileText size={22} /> View Reports</button>
           <button className="action-button cyan" onClick={() => setActive('approval')}><ClipboardCheck size={22} /> Approve Pending</button>
           <button className="action-button primary" onClick={() => setActive('cafes')}><Plus size={22} /> Add Cafe</button>
         </div>
       </div>
 
       <div className="metrics-grid">
-        <MetricCard icon={Store} label="Total Cafes" value={vendors.length.toLocaleString()} trend="+4.2%" />
-        <MetricCard icon={Gamepad2} label="Active Players" value={`${(active * 1.7).toFixed(1)}k`} trend="+12%" tone="blue" />
-        <MetricCard icon={CreditCard} label="Revenue Today" value={formatMoney(revenue / 3)} trend="+8.4k" tone="warn" />
-        <MetricCard icon={Monitor} label="Online PCs" value={`${(machines / 1000).toFixed(1)}k / ${(capacity / 1000).toFixed(0)}k`} trend={`${load}% Load`} />
+        <MetricCard icon={Store} label="Total Cafes" value={vendors.length.toLocaleString()} />
+        <MetricCard icon={ClipboardCheck} label="Approved Cafes" value={active.toLocaleString()} tone="blue" />
+        <MetricCard icon={CreditCard} label="Subscription Revenue" value={formatMoney(revenue)} tone="warn" />
+        <MetricCard icon={Monitor} label="Licensed PCs" value={capacity.toLocaleString()} />
       </div>
 
       <div className="dashboard-grid live-dashboard-grid">
@@ -904,8 +877,8 @@ function OverviewPage({ vendors, setActive }: { vendors: VendorRow[]; setActive:
         </section>
         <section className="chart-panel bookings-panel">
           <div className="panel-head compact"><h2>Network Capacity</h2><button onClick={() => setActive('cafes')}>View cafes</button></div>
-          <strong className="queue-count">{machines.toLocaleString()} / {capacity.toLocaleString()}</strong>
-          <p>active machines</p>
+          <strong className="queue-count">{capacity.toLocaleString()}</strong>
+          <p>licensed PCs</p>
         </section>
       </div>
     </section>
@@ -920,25 +893,24 @@ function CafesPage({ vendors, query, setActive, reload }: {
 }) {
   const [region, setRegion] = useState('All Regions');
   const [plan, setPlan] = useState('Any Plan');
-  const [performance, setPerformance] = useState('All');
+  const [filterQuery, setFilterQuery] = useState('');
   const [selectedVendor, setSelectedVendor] = useState<VendorRow | null>(null);
   const [showOnboard, setShowOnboard] = useState(false);
 
   const filtered = vendors.filter((vendor) => {
-    const q = query.trim().toLowerCase();
+    const q = `${query} ${filterQuery}`.trim().toLowerCase();
     const text = `${vendor.cafe_name} ${vendor.owner_name} ${vendor.email || ''} ${cityForVendor(vendor)} ${vendor.vendor_id}`.toLowerCase();
     const matchesQuery = !q || text.includes(q);
-    const matchesPlan = plan === 'Any Plan' || vendor.subscription?.package?.name === plan;
-    return matchesQuery && matchesPlan;
+    const packageName = vendor.subscription?.package?.name || vendor.subscription?.package?.code || '';
+    const matchesPlan = plan === 'Any Plan' || packageName.toLowerCase() === plan.toLowerCase();
+    const matchesRegion = region === 'All Regions' || `${vendor.address?.state || ''} ${vendor.address?.country || ''}`.toLowerCase().includes(region.toLowerCase());
+    return matchesQuery && matchesPlan && matchesRegion;
   });
 
   const totalRevenue = vendors.reduce((sum, vendor) => sum + Number(vendor.subscription?.amount_paid || 0), 0);
-  const activeNodes = vendors.reduce((sum, vendor) => sum + machinesForVendor(vendor).active, 0);
+  const activeNodes = vendors.reduce((sum, vendor) => sum + machinesForVendor(vendor).limit, 0);
   const newSignups = vendors.filter((vendor) => vendor.status === 'pending_verification').length;
-  const avgLoad = Math.round(vendors.reduce((sum, vendor) => {
-    const machines = machinesForVendor(vendor);
-    return sum + (machines.limit ? machines.active / machines.limit : 0);
-  }, 0) / Math.max(vendors.length, 1) * 100);
+  const verifiedDocuments = vendors.reduce((sum, vendor) => sum + Number(vendor.documents?.verified || 0), 0);
 
   const exportCsv = () => {
     const rows = [
@@ -971,31 +943,26 @@ function CafesPage({ vendors, query, setActive, reload }: {
       </div>
 
       <div className="cafe-stats">
-        <MetricCard icon={CreditCard} label="Total Revenue" value={formatMoney(totalRevenue)} trend="+12.4%" tone="blue" />
-        <MetricCard icon={Monitor} label="Active Nodes" value={activeNodes.toLocaleString()} trend="98.2% Up" />
-        <MetricCard icon={UserRound} label="New Signups" value={String(newSignups * 171 || 342)} trend="+42" tone="warn" />
-        <MetricCard icon={Zap} label="Avg. Load" value={`${avgLoad}%`} trend="Optimal" tone="bad" />
+        <MetricCard icon={CreditCard} label="Subscription Revenue" value={formatMoney(totalRevenue)} tone="blue" />
+        <MetricCard icon={Monitor} label="Licensed PCs" value={activeNodes.toLocaleString()} />
+        <MetricCard icon={UserRound} label="Pending Approvals" value={String(newSignups)} tone="warn" />
+        <MetricCard icon={Zap} label="Verified Documents" value={String(verifiedDocuments)} />
       </div>
 
       <div className="registry-panel">
         <div className="filters-row">
-          <div className="inline-search"><Search size={16} /><input value={query} readOnly placeholder="Filter by name..." /></div>
+          <div className="inline-search"><Search size={16} /><input value={filterQuery} onChange={(event) => setFilterQuery(event.target.value)} placeholder="Filter by name..." /></div>
           <label>Region:
             <select value={region} onChange={(e) => setRegion(e.target.value)}>
-              <option>All Regions</option><option>North America</option><option>Europe</option><option>Asia Pacific</option>
+              <option>All Regions</option><option>India</option><option>Singapore</option><option>United States</option>
             </select>
           </label>
           <label>Plan:
             <select value={plan} onChange={(e) => setPlan(e.target.value)}>
-              <option>Any Plan</option><option>Early Bird</option><option>Base</option><option>Grow</option><option>Elite</option>
+              <option>Any Plan</option><option value="early_onboard">Early Onboard</option><option>Base</option><option>Grow</option><option>Elite</option>
             </select>
           </label>
-          <div className="performance-toggle">
-            {['All', 'High', 'Low'].map((item) => (
-              <button key={item} className={performance === item ? 'active' : ''} onClick={() => setPerformance(item)}>{item}</button>
-            ))}
-          </div>
-          <button className="reset-button" onClick={() => { setRegion('All Regions'); setPlan('Any Plan'); setPerformance('All'); }}>
+          <button className="reset-button" onClick={() => { setRegion('All Regions'); setPlan('Any Plan'); setFilterQuery(''); }}>
             <RefreshCcw size={14} /> Reset Filters
           </button>
         </div>
@@ -1020,8 +987,7 @@ function CafesPage({ vendors, query, setActive, reload }: {
                 <span className={classNames('status-pill', statusTone(vendor.status))}>{vendor.status.replaceAll('_', ' ')}</span>
                 <strong>{formatMoney(Number(vendor.subscription?.amount_paid || 0))}.00</strong>
                 <div className="machine-cell">
-                  <strong>{machines.active}/{machines.limit}</strong>
-                  <span><i style={{ width: `${machines.limit ? (machines.active / machines.limit) * 100 : 0}%` }} /></span>
+                  <strong>{machines.limit || 'Not set'}</strong>
                 </div>
                 <button className="icon-button" onClick={(event) => { event.stopPropagation(); setSelectedVendor(vendor); }} title="Open cafe controls"><MoreHorizontal size={18} /></button>
               </div>
@@ -1054,12 +1020,13 @@ function ApprovalPage({ vendors, query, setVendors }: {
   const [error, setError] = useState('');
   const [activeDocumentCategory, setActiveDocumentCategory] = useState('business');
   const [showProfile, setShowProfile] = useState(false);
+  const [requestInfoMessage, setRequestInfoMessage] = useState('');
   const pending = vendors.filter((vendor) => vendor.status === 'pending_verification' || (vendor.documents?.pending || 0) > 0);
   const filtered = pending.filter((vendor) => {
     const q = query.trim().toLowerCase();
     return !q || `${vendor.cafe_name} ${vendor.owner_name} ${vendor.email || ''}`.toLowerCase().includes(q);
   });
-  const activeVendor = filtered.find((vendor) => vendor.vendor_id === selectedId) || filtered[0] || pending[0] || vendors[0];
+  const activeVendor = filtered.find((vendor) => vendor.vendor_id === selectedId) || filtered[0];
 
   const loadDetail = useCallback(async (vendorId: number) => {
     setLoadingDetail(true);
@@ -1126,7 +1093,7 @@ function ApprovalPage({ vendors, query, setVendors }: {
       await apiRequest(`admin/vendors/${activeVendor.vendor_id}/notifications/request-info`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sent_by: 'super_admin_dashboard' }),
+        body: JSON.stringify({ sent_by: 'super_admin_dashboard', message: requestInfoMessage || undefined }),
       });
       setNotice('Information request email sent to the cafe owner.');
     } catch (e) {
@@ -1135,7 +1102,7 @@ function ApprovalPage({ vendors, query, setVendors }: {
   };
 
   const docs = detail?.documents || [];
-  const selectedDocument = docs.find((document) => documentCategory(document.document_type) === activeDocumentCategory) || docs[0];
+  const selectedDocument = docs.find((document) => documentCategory(document.document_type) === activeDocumentCategory);
   const documentUrl = getDocumentUrl(selectedDocument);
   const documentTabs = [
     { id: 'business', label: 'Business License' },
@@ -1148,12 +1115,12 @@ function ApprovalPage({ vendors, query, setVendors }: {
       <div className="approval-top">
         <div>
           <h1>Approval Center</h1>
-          <p>Reviewing {pending.length || 24} pending cafe registrations and document verifications.</p>
+          <p>Reviewing {pending.length} pending cafe registrations and document verifications.</p>
         </div>
         <div className="summary-cards">
-          <div><span>Total Pending</span><strong>{String(pending.length || 24).padStart(2, '0')}</strong></div>
-          <div><span>New Today</span><strong>08</strong></div>
-          <div><span>Due Soon</span><strong>03</strong></div>
+          <div><span>Total Pending</span><strong>{String(pending.length).padStart(2, '0')}</strong></div>
+          <div><span>Unverified Docs</span><strong>{String(pending.reduce((sum, vendor) => sum + Number(vendor.documents?.pending || 0), 0)).padStart(2, '0')}</strong></div>
+          <div><span>Rejected</span><strong>{String(vendors.filter((vendor) => vendor.status === 'rejected').length).padStart(2, '0')}</strong></div>
         </div>
       </div>
 
@@ -1196,7 +1163,7 @@ function ApprovalPage({ vendors, query, setVendors }: {
             <div className="store-badge"><Store size={30} /></div>
             <div>
               <h2>{detail?.cafe_name || activeVendor?.cafe_name || 'Cafe Application'}</h2>
-              <p>{detail?.address?.addressLine1 || '101 Victoria St'}, {detail?.address?.country || cityForVendor(activeVendor)}</p>
+              <p>{detail?.address?.addressLine1 || activeVendor?.address?.addressLine1 || 'Address not provided'}, {detail?.address?.country || activeVendor?.address?.country || (activeVendor ? cityForVendor(activeVendor) : 'Not provided')}</p>
             </div>
             <div className="review-header-actions">
               <button disabled={!activeVendor} onClick={() => setShowProfile(true)}>View Profile</button>
@@ -1226,6 +1193,7 @@ function ApprovalPage({ vendors, query, setVendors }: {
                 <Info size={20} />
                 <div><strong>Review Note</strong><p>Previewing the file uploaded by the cafe owner. Verify the document contents before making a decision.</p></div>
               </div>
+              <label className="request-info-field">Request details<textarea value={requestInfoMessage} onChange={(event) => setRequestInfoMessage(event.target.value)} placeholder="Describe the information the cafe owner must provide" /></label>
             </div>
             <div className="document-preview">
               <h3>Document Preview</h3>
@@ -1239,9 +1207,9 @@ function ApprovalPage({ vendors, query, setVendors }: {
           </div>
 
           <div className="decision-bar">
-            <button className="reject" onClick={() => updateVendor('rejected')}><X size={18} /> Reject</button>
+            <button className="reject" disabled={!activeVendor} onClick={() => { if (window.confirm('Reject this cafe application? The cafe will remain inactive.')) void updateVendor('rejected'); }}><X size={18} /> Reject</button>
             <button className="info" onClick={() => void requestInformation()}><HelpCircle size={18} /> Request Info</button>
-            <button className="approve" onClick={() => updateVendor('active')}><Check size={19} /> Approve Registration</button>
+            <button className="approve" disabled={!activeVendor || !docs.length} onClick={() => { if (window.confirm('Approve this cafe registration? This verifies all uploaded documents and activates the cafe.')) void updateVendor('active'); }}><Check size={19} /> Approve Registration</button>
           </div>
         </div>
       </div>
@@ -1352,16 +1320,19 @@ function GamesPage() {
   const [newGame, setNewGame] = useState({ name: '', genre: '', developer: '', release_date: '', description: '' });
 
   const load = useCallback(async () => {
-    const [popular, platformData] = await Promise.all([
-      optionalApiRequest<{ results?: GameRow[]; games?: GameRow[] }>('games/popular?limit=24', { results: [], games: [] }),
-      optionalApiRequest<{ platforms?: Array<{ slug?: string; name?: string; count?: number }> }>('games/platforms?include_empty=true', { platforms: [] }),
-    ]);
-    setGames(popular.results?.length ? popular.results : popular.games || [
-      { id: 1, name: 'Valorant', platform: 'pc', rating: 4.8, vendors_count: 128 },
-      { id: 2, name: 'Counter-Strike 2', platform: 'pc', rating: 4.7, vendors_count: 116 },
-      { id: 3, name: 'EA FC 26', platform: 'ps5', rating: 4.5, vendors_count: 82 },
-    ]);
-    setPlatforms(platformData.platforms || []);
+    setError('');
+    try {
+      const [popular, platformData] = await Promise.all([
+        apiRequest<{ results?: GameRow[]; games?: GameRow[] }>('games/popular?limit=24'),
+        apiRequest<{ platforms?: Array<{ slug?: string; name?: string; count?: number }> }>('games/platforms?include_empty=true'),
+      ]);
+      setGames(popular.results || popular.games || []);
+      setPlatforms(platformData.platforms || []);
+    } catch (e) {
+      setGames([]);
+      setPlatforms([]);
+      setError(e instanceof Error ? e.message : 'Unable to load the game catalog.');
+    }
   }, []);
 
   useEffect(() => { void load(); }, [load]);
@@ -1404,7 +1375,7 @@ function GamesPage() {
       {error ? <div className="action-notice bad">{error}</div> : null}
       {showAdd ? <section className="e2e-card game-create-form"><div className="form-grid-compact four"><label>Name<input value={newGame.name} onChange={(e) => setNewGame({ ...newGame, name: e.target.value })} /></label><label>Genre<input value={newGame.genre} onChange={(e) => setNewGame({ ...newGame, genre: e.target.value })} /></label><label>Developer<input value={newGame.developer} onChange={(e) => setNewGame({ ...newGame, developer: e.target.value })} /></label><label>Release Date<input type="date" value={newGame.release_date} onChange={(e) => setNewGame({ ...newGame, release_date: e.target.value })} /></label></div><label>Description<textarea value={newGame.description} onChange={(e) => setNewGame({ ...newGame, description: e.target.value })} /></label><div className="inline-actions"><button className="action-button primary" onClick={() => void createGame()}>Add to Catalog</button><button onClick={() => setShowAdd(false)}>Cancel</button></div></section> : null}
       <div className="ops-summary-strip">
-        {(platforms.length ? platforms : [{ name: 'PC' }, { name: 'PlayStation' }, { name: 'Xbox' }]).slice(0, 5).map((platform) => (
+        {platforms.slice(0, 5).map((platform) => (
           <div key={platform.slug || platform.name}><strong>{platform.name || platform.slug}</strong><span>{platform.count || 0} catalog rows</span></div>
         ))}
       </div>
@@ -1417,6 +1388,7 @@ function GamesPage() {
           </button>
         ))}
       </div>
+      {!filtered.length && !error ? <div className="empty-state">No games are available in the live catalog.</div> : null}
     </section>
   );
 }
