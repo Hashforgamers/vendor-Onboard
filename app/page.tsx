@@ -6,7 +6,6 @@ import {
   AlertTriangle,
   BarChart3,
   Bell,
-  Building2,
   Check,
   ClipboardCheck,
   CreditCard,
@@ -19,7 +18,6 @@ import {
   Info,
   LogOut,
   Mail,
-  Map,
   Monitor,
   MoreHorizontal,
   Plus,
@@ -27,14 +25,10 @@ import {
   RefreshCcw,
   Search,
   Settings,
-  Settings2,
   SlidersHorizontal,
   Store,
   Trash2,
-  Ticket,
-  Trophy,
   UserRound,
-  Users,
   X,
   Zap,
 } from 'lucide-react';
@@ -204,17 +198,10 @@ const navItems: Array<{ id: ModuleId; label: string; icon: React.ComponentType<{
   { id: 'overview', label: 'Dashboard', icon: Grid2X2 },
   { id: 'cafes', label: 'Cafes', icon: Store },
   { id: 'approval', label: 'Approval Center', icon: ClipboardCheck },
-  { id: 'users', label: 'Users', icon: Users },
-  { id: 'regional', label: 'Regional', icon: Map },
-  { id: 'tournaments', label: 'Tournaments', icon: Trophy },
   { id: 'games', label: 'Games', icon: Gamepad2 },
-  { id: 'bookings', label: 'Bookings', icon: Ticket },
   { id: 'payments', label: 'Payment Center', icon: CreditCard },
-  { id: 'analytics', label: 'Analytics', icon: BarChart3 },
-  { id: 'subscriptions', label: 'Subscriptions', icon: Settings2 },
-  { id: 'plans', label: 'Plan Models', icon: Settings },
   { id: 'partners', label: 'Partners', icon: Handshake },
-  { id: 'products', label: 'Products', icon: Package },
+  { id: 'products', label: 'Catalog', icon: Package },
   { id: 'newsletter', label: 'Newsletter', icon: Mail },
 ];
 
@@ -845,79 +832,32 @@ function OverviewPage({ vendors, setActive }: { vendors: VendorRow[]; setActive:
         <MetricCard icon={Monitor} label="Online PCs" value={`${(machines / 1000).toFixed(1)}k / ${(capacity / 1000).toFixed(0)}k`} trend={`${load}% Load`} />
       </div>
 
-      <div className="dashboard-grid">
-        <div className="chart-panel wide">
-          <div className="panel-head">
-            <div>
-              <h2>Revenue Trend</h2>
-              <p>Historical daily performance across all regions</p>
-            </div>
-            <div className="segmented"><button className="active">7D</button><button>1M</button><button>3M</button></div>
-          </div>
-          <div className="line-chart" aria-label="Revenue trend chart">
-            <svg viewBox="0 0 760 330" role="img">
-              <defs>
-                <linearGradient id="lineFill" x1="0" x2="0" y1="0" y2="1">
-                  <stop offset="0%" stopColor="#b8b6ff" stopOpacity=".42" />
-                  <stop offset="100%" stopColor="#b8b6ff" stopOpacity="0" />
-                </linearGradient>
-              </defs>
-              <path className="grid-line" d="M40 30H740M40 110H740M40 190H740M40 270H740" />
-              <path className="axis-line" d="M40 20V300H740" />
-              <path className="area" d="M40 260 C150 170 230 210 300 220 C390 235 390 80 450 80 C520 80 560 280 640 280 C690 280 720 220 740 130 L740 300 L40 300 Z" />
-              <path className="line" d="M40 260 C150 170 230 210 300 220 C390 235 390 80 450 80 C520 80 560 280 640 280 C690 280 720 220 740 130" />
-            </svg>
-          </div>
-        </div>
-
-        <div className="chart-panel activity-panel">
-          <div className="panel-head compact">
-            <h2>System Activity</h2>
-            <button>View All</button>
-          </div>
-          {[
-            ['New Cafe Registration: Neon Pulse Gaming', 'Kyoto, Japan · Just now', Building2],
-            ['High-value booking: $450.00 VIP Room 4', 'Los Angeles, USA · 12 mins ago', Ticket],
-            ['Latency Spike Detected', 'Region: EU-West · 45 mins ago', AlertTriangle],
-            ['Firmware update complete on 40 units', 'Berlin, DE · 2 hours ago', RefreshCcw],
-          ].map(([title, subtitle, Icon], index) => (
-            <div className="activity-row" key={String(title)}>
-              <span className={classNames('activity-icon', index === 2 && 'danger')}><Icon size={16} /></span>
-              <div>
-                <strong>{title as string}</strong>
-                <p>{subtitle as string}</p>
-              </div>
-            </div>
-          ))}
-        </div>
-
-        <div className="chart-panel density-panel">
-          <h2>Global Cafe Density</h2>
-          <div className="traffic-legend"><span><i /> High Traffic</span><span><i /> Moderate Traffic</span></div>
-          <div className="world-map">
-            {['Los Angeles', 'Toronto', 'London', 'Berlin', 'Mumbai', 'Singapore', 'Sydney', 'Seoul'].map((city, index) => (
-              <span key={city} className={`map-node node-${index}`}>{city}</span>
+      <div className="dashboard-grid live-dashboard-grid">
+        <section className="chart-panel wide">
+          <div className="panel-head"><h2>Needs Attention</h2><button onClick={() => setActive('approval')}>Open approvals</button></div>
+          <div className="dashboard-list">
+            {vendors.filter((vendor) => vendor.status !== 'active' || (vendor.documents?.pending || 0) > 0).slice(0, 5).map((vendor) => (
+              <button key={vendor.vendor_id} onClick={() => setActive('cafes')}><span><strong>{vendor.cafe_name}</strong><small>{vendor.owner_name} · {cityForVendor(vendor)}</small></span><b className={classNames('status-pill', statusTone(vendor.status))}>{vendor.status.replaceAll('_', ' ')}</b></button>
             ))}
-            <svg viewBox="0 0 700 280" preserveAspectRatio="none">
-              <path d="M70 210 C170 120 300 210 360 90 C430 0 500 260 640 180" />
-              <path d="M100 220 C240 40 350 120 520 80 C610 60 640 160 660 220" />
-              <path d="M250 160 C330 80 420 120 520 210" />
-            </svg>
+            {!vendors.length ? <div className="empty-state">No cafe records available.</div> : null}
           </div>
-        </div>
-
-        <div className="chart-panel bookings-panel">
-          <div className="panel-head compact">
-            <h2>Hourly Bookings</h2>
-            <span>Last 24 Hours</span>
+        </section>
+        <section className="chart-panel activity-panel">
+          <div className="panel-head compact"><h2>Approval Queue</h2><button onClick={() => setActive('approval')}>Review</button></div>
+          <strong className="queue-count">{vendors.filter((vendor) => vendor.status === 'pending_verification' || (vendor.documents?.pending || 0) > 0).length}</strong>
+          <p>cafes require review</p>
+        </section>
+        <section className="chart-panel density-panel">
+          <div className="panel-head compact"><h2>Plan Adoption</h2><button onClick={() => setActive('cafes')}>Manage</button></div>
+          <div className="analytics-bars">
+            {Object.entries(vendors.reduce<Record<string, number>>((acc, vendor) => { const key = vendor.subscription?.package?.name || 'Unassigned'; acc[key] = (acc[key] || 0) + 1; return acc; }, {})).map(([plan, count]) => <div className="bar-row" key={plan}><span>{plan}</span><b><i style={{ width: `${(count / Math.max(vendors.length, 1)) * 100}%` }} /></b><strong>{count}</strong></div>)}
           </div>
-          <div className="bars">
-            {[22, 36, 48, 66, 72, 55, 28, 14, 10, 20, 44, 62].map((height, index) => (
-              <i key={index} style={{ height: `${height}%` }} />
-            ))}
-          </div>
-          <button className="floating-zap"><Zap size={28} /></button>
-        </div>
+        </section>
+        <section className="chart-panel bookings-panel">
+          <div className="panel-head compact"><h2>Network Capacity</h2><button onClick={() => setActive('cafes')}>View cafes</button></div>
+          <strong className="queue-count">{machines.toLocaleString()} / {capacity.toLocaleString()}</strong>
+          <p>active machines</p>
+        </section>
       </div>
     </section>
   );
@@ -951,6 +891,23 @@ function CafesPage({ vendors, query, setActive, reload }: {
     return sum + (machines.limit ? machines.active / machines.limit : 0);
   }, 0) / Math.max(vendors.length, 1) * 100);
 
+  const exportCsv = () => {
+    const rows = [
+      ['Cafe', 'Owner', 'City', 'Status', 'Plan', 'Revenue', 'Machines'],
+      ...filtered.map((vendor) => {
+        const machines = machinesForVendor(vendor);
+        return [vendor.cafe_name, vendor.owner_name, cityForVendor(vendor), vendor.status, vendor.subscription?.package?.name || '', String(vendor.subscription?.amount_paid || 0), `${machines.active}/${machines.limit}`];
+      }),
+    ];
+    const csv = rows.map((row) => row.map((value) => `"${String(value).replaceAll('"', '""')}"`).join(',')).join('\n');
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `hash-cafes-${todayIso()}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <section className="page-stack">
       <div className="hero-row cafe-hero">
@@ -959,7 +916,7 @@ function CafesPage({ vendors, query, setActive, reload }: {
           <h1>Manage Cafes</h1>
         </div>
         <div className="hero-actions">
-          <button className="action-button secondary"><Download size={18} /> Export CSV</button>
+          <button className="action-button secondary" onClick={exportCsv}><Download size={18} /> Export CSV</button>
           <button className="action-button primary" onClick={() => setShowOnboard(true)}><Plus size={18} /> Onboard Cafe</button>
         </div>
       </div>
@@ -1002,7 +959,9 @@ function CafesPage({ vendors, query, setActive, reload }: {
             const machines = machinesForVendor(vendor);
             const initials = vendor.cafe_name.split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toUpperCase();
             return (
-              <div className="cafe-row" key={vendor.vendor_id}>
+              <div className="cafe-row" key={vendor.vendor_id} role="button" tabIndex={0} onClick={() => setSelectedVendor(vendor)} onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setSelectedVendor(vendor); }
+              }}>
                 <div className="cafe-name">
                   <span className="initials">{initials}</span>
                   <div><strong>{vendor.cafe_name}</strong><small>ID: CF-{vendor.vendor_id}</small></div>
@@ -1015,17 +974,14 @@ function CafesPage({ vendors, query, setActive, reload }: {
                   <strong>{machines.active}/{machines.limit}</strong>
                   <span><i style={{ width: `${machines.limit ? (machines.active / machines.limit) * 100 : 0}%` }} /></span>
                 </div>
-                <button className="icon-button" onClick={() => setSelectedVendor(vendor)} title="Open cafe controls"><MoreHorizontal size={18} /></button>
+                <button className="icon-button" onClick={(event) => { event.stopPropagation(); setSelectedVendor(vendor); }} title="Open cafe controls"><MoreHorizontal size={18} /></button>
               </div>
             );
           })}
           {!filtered.length ? <div className="empty-row">No cafes match the current filters.</div> : null}
         </div>
 
-        <div className="pagination-row">
-          <span>Showing 1 to {filtered.length} of {Math.max(vendors.length, 1284)} results</span>
-          <div><button>Previous</button><button className="active">1</button><button>2</button><button>3</button><button>Next</button></div>
-        </div>
+        <div className="pagination-row"><span>{filtered.length} cafes</span></div>
       </div>
       <div className="inline-actions page-inline-actions">
         <button onClick={() => setActive('approval')}>Open approval queue</button>
@@ -1340,6 +1296,9 @@ function GamesPage() {
   const [platforms, setPlatforms] = useState<Array<{ slug?: string; name?: string; count?: number }>>([]);
   const [query, setQuery] = useState('');
   const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
+  const [showAdd, setShowAdd] = useState(false);
+  const [newGame, setNewGame] = useState({ name: '', genre: '', developer: '', release_date: '', description: '' });
 
   const load = useCallback(async () => {
     const [popular, platformData] = await Promise.all([
@@ -1365,15 +1324,34 @@ function GamesPage() {
     setMessage(`${game.name || game.title} discovery event recorded.`);
   };
 
+  const createGame = async () => {
+    setError('');
+    setMessage('');
+    try {
+      if (!newGame.name.trim()) throw new Error('Game name is required.');
+      const response = await apiRequest<{ game?: GameRow; message?: string }>('games', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newGame),
+      });
+      setGames((rows) => [response.game || { ...newGame, id: Date.now() }, ...rows]);
+      setNewGame({ name: '', genre: '', developer: '', release_date: '', description: '' });
+      setShowAdd(false);
+      setMessage(response.message || 'Game added to the catalog.');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Unable to add the game.');
+    }
+  };
+
   const filtered = games.filter((game) => !query || `${game.name || game.title || ''} ${game.platform || ''}`.toLowerCase().includes(query.toLowerCase()));
 
   return (
     <section className="page-stack">
       <div className="hero-row compact-hero">
-        <div><h1>Games</h1><p>Discovery catalog, platforms, and cafe game demand.</p></div>
-        <div className="inline-actions"><input placeholder="Search games" value={query} onChange={(e) => setQuery(e.target.value)} /><button onClick={load}>Refresh</button></div>
+        <div><h1>Games</h1></div>
+        <div className="inline-actions"><input placeholder="Search games" value={query} onChange={(e) => setQuery(e.target.value)} /><button onClick={load}>Refresh</button><button className="action-button primary" onClick={() => setShowAdd((value) => !value)}><Plus size={16} /> Add Game</button></div>
       </div>
       {message ? <div className="action-notice good">{message}</div> : null}
+      {error ? <div className="action-notice bad">{error}</div> : null}
+      {showAdd ? <section className="e2e-card game-create-form"><div className="form-grid-compact four"><label>Name<input value={newGame.name} onChange={(e) => setNewGame({ ...newGame, name: e.target.value })} /></label><label>Genre<input value={newGame.genre} onChange={(e) => setNewGame({ ...newGame, genre: e.target.value })} /></label><label>Developer<input value={newGame.developer} onChange={(e) => setNewGame({ ...newGame, developer: e.target.value })} /></label><label>Release Date<input type="date" value={newGame.release_date} onChange={(e) => setNewGame({ ...newGame, release_date: e.target.value })} /></label></div><label>Description<textarea value={newGame.description} onChange={(e) => setNewGame({ ...newGame, description: e.target.value })} /></label><div className="inline-actions"><button className="action-button primary" onClick={() => void createGame()}>Add to Catalog</button><button onClick={() => setShowAdd(false)}>Cancel</button></div></section> : null}
       <div className="ops-summary-strip">
         {(platforms.length ? platforms : [{ name: 'PC' }, { name: 'PlayStation' }, { name: 'Xbox' }]).slice(0, 5).map((platform) => (
           <div key={platform.slug || platform.name}><strong>{platform.name || platform.slug}</strong><span>{platform.count || 0} catalog rows</span></div>
