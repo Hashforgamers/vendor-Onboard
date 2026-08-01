@@ -2558,3 +2558,49 @@ h3 { font-size: 14px; font-weight: 650; }
 
 .cafe-row { cursor: pointer; }
 .cafe-row:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; }
+
+.cafe-workspace {
+  display: grid;
+  grid-template-columns: minmax(560px, 1fr) minmax(420px, .92fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.cafe-detail-panel {
+  min-height: 620px;
+  max-height: calc(100dvh - 210px);
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.embedded-detail.modal-panel {
+  width: 100%;
+  min-height: 100%;
+  max-height: none;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.embedded-detail .e2e-grid { grid-template-columns: 1fr; }
+.embedded-detail .modal-head { position: sticky; top: 0; z-index: 2; background: var(--panel); padding-bottom: 12px; }
+
+.cafe-detail-empty {
+  min-height: 360px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 8px;
+  color: var(--muted);
+  display: grid;
+  place-content: center;
+  gap: 8px;
+  text-align: center;
+}
+
+.cafe-detail-empty svg { margin: 0 auto; color: var(--blue); }
+
+@media (max-width: 1180px) {
+  .cafe-workspace { grid-template-columns: 1fr; }
+  .cafe-detail-panel { max-height: none; }
+}

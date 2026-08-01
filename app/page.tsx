@@ -635,10 +635,11 @@ function OnboardCafeModal({ onClose, onCreated }: { onClose: () => void; onCreat
   );
 }
 
-function VendorDetailModal({ vendor, onClose, onChanged }: {
+function VendorDetailModal({ vendor, onClose, onChanged, embedded = false }: {
   vendor: VendorRow;
   onClose: () => void;
   onChanged: () => void;
+  embedded?: boolean;
 }) {
   const [detail, setDetail] = useState<VendorDetail | null>(null);
   const [loading, setLoading] = useState(false);
@@ -698,8 +699,8 @@ function VendorDetailModal({ vendor, onClose, onChanged }: {
   const docs = detail?.documents || [];
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal-panel detail-modal" onClick={(event) => event.stopPropagation()}>
+    <div className={embedded ? 'cafe-detail-panel' : 'modal-backdrop'} onClick={embedded ? undefined : onClose}>
+      <div className={classNames('modal-panel', 'detail-modal', embedded && 'embedded-detail')} onClick={(event) => event.stopPropagation()}>
         <div className="modal-head">
           <div>
             <h2>{detail?.cafe_name || vendor.cafe_name}</h2>
@@ -940,6 +941,7 @@ function CafesPage({ vendors, query, setActive, reload }: {
         <MetricCard icon={Zap} label="Avg. Load" value={`${avgLoad}%`} trend="Optimal" tone="bad" />
       </div>
 
+      <div className="cafe-workspace">
       <div className="registry-panel">
         <div className="filters-row">
           <div className="inline-search"><Search size={16} /><input value={query} readOnly placeholder="Filter by name..." /></div>
@@ -995,11 +997,12 @@ function CafesPage({ vendors, query, setActive, reload }: {
 
         <div className="pagination-row"><span>{filtered.length} cafes</span></div>
       </div>
+      {selectedVendor ? <VendorDetailModal embedded vendor={selectedVendor} onClose={() => setSelectedVendor(null)} onChanged={reload} /> : <aside className="cafe-detail-empty"><Store size={22} /><strong>Select a cafe</strong><span>Choose a row to manage the cafe.</span></aside>}
+      </div>
       <div className="inline-actions page-inline-actions">
         <button onClick={() => setActive('approval')}>Open approval queue</button>
         <button onClick={reload}>Refresh backend data</button>
       </div>
-      {selectedVendor ? <VendorDetailModal vendor={selectedVendor} onClose={() => setSelectedVendor(null)} onChanged={reload} /> : null}
       {showOnboard ? <OnboardCafeModal onClose={() => setShowOnboard(false)} onCreated={reload} /> : null}
     </section>
   );
