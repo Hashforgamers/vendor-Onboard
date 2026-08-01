@@ -86,6 +86,15 @@ type VendorRow = {
   };
 };
 
+type VendorDocument = {
+  id: number;
+  document_type: string;
+  document_url: string;
+  documentUrl?: string;
+  status: string;
+  uploaded_at?: string;
+};
+
 type VendorDetail = {
   vendor_id: number;
   cafe_name: string;
@@ -103,13 +112,7 @@ type VendorDetail = {
     latitude?: number | null;
     longitude?: number | null;
   };
-  documents?: Array<{
-    id: number;
-    document_type: string;
-    document_url: string;
-    status: string;
-    uploaded_at?: string;
-  }>;
+  documents?: VendorDocument[];
   subscriptions?: Array<{
     id: number;
     status: string;
@@ -194,6 +197,8 @@ type SubscriptionRow = {
   period_end?: string;
   package?: { code?: string; name?: string; pc_limit?: number };
 };
+
+const HASH_LOGO_URL = 'https://res.cloudinary.com/dxjjigepf/image/upload/v1774472024/hash_for_gamer_logo_d1v4wc.png';
 
 const navItems: Array<{ id: ModuleId; label: string; icon: React.ComponentType<{ size?: number }> }> = [
   { id: 'overview', label: 'Dashboard', icon: Grid2X2 },
@@ -376,6 +381,22 @@ function machinesForVendor(vendor: VendorRow) {
   return { active, limit };
 }
 
+function getDocumentUrl(document?: VendorDocument) {
+  if (!document) return '';
+  return document.document_url || document.documentUrl || '';
+}
+
+function documentCategory(documentType = '') {
+  const normalized = documentType.toLowerCase();
+  if (normalized.includes('identity') || normalized.includes('owner')) return 'identity';
+  if (normalized.includes('financial') || normalized.includes('bank') || normalized.includes('tax')) return 'financial';
+  return 'business';
+}
+
+function isPdfDocument(url: string) {
+  return /\.pdf(?:$|[?#])/i.test(url) || /\/raw\/upload\//i.test(url);
+}
+
 function useAdminData() {
   const [vendors, setVendors] = useState<VendorRow[]>(fallbackVendors);
   const [loading, setLoading] = useState(false);
@@ -410,10 +431,9 @@ function Sidebar({ active, setActive }: { active: ModuleId; setActive: (id: Modu
   return (
     <aside className="hq-sidebar">
       <div className="hq-brand">
-        <Image src="/hash-logo.png" alt="Hash Admin" width={40} height={40} className="hq-logo" priority />
+        <Image src={HASH_LOGO_URL} alt="Hash Admin" width={40} height={40} className="hq-logo" priority unoptimized />
         <div>
           <strong>Hash Admin</strong>
-          <span>Global Gaming Network</span>
         </div>
       </div>
 
@@ -638,6 +658,7 @@ function VendorDetailModal({ vendor, onClose, onChanged }: {
   const [pin, setPin] = useState('');
   const [password, setPassword] = useState('');
   const [staffName, setStaffName] = useState('');
+  const [ownerMessage, setOwnerMessage] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -780,12 +801,13 @@ function VendorDetailModal({ vendor, onClose, onChanged }: {
 
           <section className="e2e-card">
             <h3>Owner Notices</h3>
+            <label>Message<textarea value={ownerMessage} onChange={(event) => setOwnerMessage(event.target.value)} placeholder="Add an optional note for the cafe owner" /></label>
             <div className="inline-actions">
               <button onClick={() => runAction('Promotion email sent.', () => apiRequest(`admin/vendors/${vendor.vendor_id}/notifications/promotion/early-onboard`, {
-                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sent_by: 'super_admin_dashboard' }),
+                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sent_by: 'super_admin_dashboard', message: ownerMessage || undefined }),
               }).then(() => undefined))}>Send Promotion</button>
               <button onClick={() => runAction('Deactivation notice sent.', () => apiRequest(`admin/vendors/${vendor.vendor_id}/notifications/deactivation`, {
-                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reason: 'Admin review', sent_by: 'super_admin_dashboard' }),
+                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reason: ownerMessage || 'Admin review', sent_by: 'super_admin_dashboard' }),
               }).then(() => undefined))}>Send Notice</button>
             </div>
           </section>
@@ -1025,6 +1047,8 @@ function ApprovalPage({ vendors, query, setVendors }: {
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
+  const [activeDocumentCategory, setActiveDocumentCategory] = useState('business');
+  const [showProfile, setShowProfile] = useState(false);
   const pending = vendors.filter((vendor) => vendor.status === 'pending_verification' || (vendor.documents?.pending || 0) > 0);
   const filtered = pending.filter((vendor) => {
     const q = query.trim().toLowerCase();
@@ -1038,24 +1062,13 @@ function ApprovalPage({ vendors, query, setVendors }: {
     try {
       const data = await apiRequest<{ vendor: VendorDetail }>(`admin/vendors/${vendorId}`);
       setDetail(data.vendor);
-    } catch {
-      setDetail(fallbackDetails[vendorId] || {
-        vendor_id: vendorId,
-        cafe_name: activeVendor?.cafe_name || 'Cafe Application',
-        owner_name: activeVendor?.owner_name || 'Owner',
-        status: activeVendor?.status || 'pending_verification',
-        account_email: activeVendor?.email,
-        contact: { email: activeVendor?.email, phone: activeVendor?.phone },
-        documents: [
-          { id: 1, document_type: 'Business License', document_url: '', status: 'pending' },
-          { id: 2, document_type: 'Identity Docs', document_url: '', status: activeVendor?.documents?.verified ? 'verified' : 'pending' },
-          { id: 3, document_type: 'Financial Details', document_url: '', status: 'pending' },
-        ],
-      });
+    } catch (e) {
+      setDetail(null);
+      setError(e instanceof Error ? e.message : 'Unable to load the owner-uploaded documents.');
     } finally {
       setLoadingDetail(false);
     }
-  }, [activeVendor]);
+  }, []);
 
   useEffect(() => {
     if (activeVendor?.vendor_id && activeVendor.vendor_id !== selectedId) {
@@ -1073,7 +1086,10 @@ function ApprovalPage({ vendors, query, setVendors }: {
     setError('');
     try {
       const docs = detail?.documents?.map((doc) => doc.id).filter(Boolean) || [];
-      if (nextStatus === 'active' && docs.length) {
+      if (nextStatus === 'active' && !docs.length) {
+        throw new Error('Approval requires at least one uploaded document.');
+      }
+      if (nextStatus === 'active') {
         await apiRequest(`admin/vendors/${activeVendor.vendor_id}/documents/verify`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -1086,20 +1102,41 @@ function ApprovalPage({ vendors, query, setVendors }: {
         body: JSON.stringify({ status: nextStatus, changed_by: 'super_admin_dashboard' }),
       });
       setNotice(nextStatus === 'active' ? 'Registration approved.' : nextStatus === 'rejected' ? 'Application rejected.' : 'Information request recorded.');
-    } catch (e) {
-      setNotice(nextStatus === 'active' ? 'Registration approved locally. Backend did not confirm.' : 'Action recorded locally. Backend did not confirm.');
-      setError(e instanceof Error ? e.message : 'Backend action failed');
-    } finally {
       setVendors((prev) => prev.map((vendor) => vendor.vendor_id === activeVendor.vendor_id ? {
         ...vendor,
         status: nextStatus === 'active' ? 'active' : nextStatus,
-        documents: vendor.documents ? { ...vendor.documents, verified: vendor.documents.total, pending: 0, is_fully_verified: nextStatus === 'active' } : vendor.documents,
+        documents: vendor.documents ? { ...vendor.documents, verified: nextStatus === 'active' ? vendor.documents.total : vendor.documents.verified, pending: nextStatus === 'active' ? 0 : vendor.documents.pending, is_fully_verified: nextStatus === 'active' } : vendor.documents,
       } : vendor));
+      await loadDetail(activeVendor.vendor_id);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Backend action failed');
     }
   };
 
-  const docs = detail?.documents?.length ? detail.documents : fallbackDetails[7721].documents || [];
-  const license = docs.find((doc) => doc.document_type.toLowerCase().includes('business')) || docs[0];
+  const requestInformation = async () => {
+    if (!activeVendor) return;
+    setNotice('');
+    setError('');
+    try {
+      await apiRequest(`admin/vendors/${activeVendor.vendor_id}/notifications/request-info`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sent_by: 'super_admin_dashboard' }),
+      });
+      setNotice('Information request email sent to the cafe owner.');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Unable to send the information request.');
+    }
+  };
+
+  const docs = detail?.documents || [];
+  const selectedDocument = docs.find((document) => documentCategory(document.document_type) === activeDocumentCategory) || docs[0];
+  const documentUrl = getDocumentUrl(selectedDocument);
+  const documentTabs = [
+    { id: 'business', label: 'Business License' },
+    { id: 'identity', label: 'Identity Docs' },
+    { id: 'financial', label: 'Financial Details' },
+  ];
 
   return (
     <section className="page-stack approval-page">
@@ -1155,14 +1192,17 @@ function ApprovalPage({ vendors, query, setVendors }: {
               <p>{detail?.address?.addressLine1 || '101 Victoria St'}, {detail?.address?.country || cityForVendor(activeVendor)}</p>
             </div>
             <div className="review-header-actions">
-              <button>View Profile</button>
-              <button>Contact Owner</button>
+              <button disabled={!activeVendor} onClick={() => setShowProfile(true)}>View Profile</button>
+              <button disabled={!detail?.contact?.email && !detail?.account_email} onClick={() => {
+                const email = detail?.contact?.email || detail?.account_email;
+                if (email) window.location.href = `mailto:${email}`;
+              }}>Contact Owner</button>
             </div>
           </div>
 
           <div className="tabs-row">
-            {['Business License', 'Identity Docs', 'Financial Details'].map((tab, index) => (
-              <button key={tab} className={index === 0 ? 'active' : ''}>{tab}</button>
+            {documentTabs.map((tab) => (
+              <button key={tab.id} className={activeDocumentCategory === tab.id ? 'active' : ''} onClick={() => setActiveDocumentCategory(tab.id)}>{tab.label}</button>
             ))}
           </div>
 
@@ -1170,41 +1210,35 @@ function ApprovalPage({ vendors, query, setVendors }: {
             <div className="document-details">
               <h3>Document Details</h3>
               <dl>
-                <dt>License Number</dt><dd>SG-2023-9941X</dd>
-                <dt>Issue Date</dt><dd>Nov 12, 2023</dd>
-                <dt>Expiry Date</dt><dd>Nov 11, 2025</dd>
-                <dt>Entity Type</dt><dd>Private Limited</dd>
+                <dt>Document Type</dt><dd>{selectedDocument?.document_type?.replaceAll('_', ' ') || 'Not uploaded'}</dd>
+                <dt>Review Status</dt><dd>{selectedDocument?.status || 'Awaiting upload'}</dd>
+                <dt>Uploaded</dt><dd>{selectedDocument?.uploaded_at ? new Date(selectedDocument.uploaded_at).toLocaleString() : 'Not available'}</dd>
+                <dt>Owner</dt><dd>{detail?.owner_name || activeVendor?.owner_name || 'Not available'}</dd>
               </dl>
               <div className="audit-note">
                 <Info size={20} />
-                <div><strong>Audit Note</strong><p>Automatic verification failed due to watermarked background on license scan. Requires manual visual confirmation.</p></div>
+                <div><strong>Review Note</strong><p>Previewing the file uploaded by the cafe owner. Verify the document contents before making a decision.</p></div>
               </div>
             </div>
             <div className="document-preview">
               <h3>Document Preview</h3>
-              {loadingDetail ? <div className="document-skeleton">Loading document...</div> : (
-                <div className="license-card">
-                  <div className="license-paper">
-                    <span>ACRA</span>
-                    <strong>Business Registration Certificate</strong>
-                    <i />
-                    <i />
-                    <i />
-                    <small>{license?.document_type || 'Business License'}</small>
-                  </div>
+              {loadingDetail ? <div className="document-skeleton">Loading owner upload...</div> : documentUrl ? (
+                <div className="uploaded-document-frame">
+                  {isPdfDocument(documentUrl) ? <iframe title={selectedDocument?.document_type || 'Owner uploaded document'} src={documentUrl} /> : <Image src={documentUrl} alt={selectedDocument?.document_type || 'Owner uploaded document'} width={960} height={640} unoptimized />}
                 </div>
-              )}
-              <p>Document ID: doc_{activeVendor?.vendor_id || 7721}_license.pdf (1.2MB)</p>
+              ) : <div className="document-skeleton">No uploaded file is available for this category.</div>}
+              {documentUrl ? <p><a href={documentUrl} target="_blank" rel="noreferrer">Open uploaded document</a> · Document #{selectedDocument?.id}</p> : null}
             </div>
           </div>
 
           <div className="decision-bar">
             <button className="reject" onClick={() => updateVendor('rejected')}><X size={18} /> Reject</button>
-            <button className="info" onClick={() => updateVendor('pending_verification')}><HelpCircle size={18} /> Request Info</button>
+            <button className="info" onClick={() => void requestInformation()}><HelpCircle size={18} /> Request Info</button>
             <button className="approve" onClick={() => updateVendor('active')}><Check size={19} /> Approve Registration</button>
           </div>
         </div>
       </div>
+      {showProfile && activeVendor ? <VendorDetailModal vendor={activeVendor} onClose={() => setShowProfile(false)} onChanged={() => { void loadDetail(activeVendor.vendor_id); }} /> : null}
     </section>
   );
 }
@@ -1553,6 +1587,15 @@ export default function HomePage() {
   const [active, setActive] = useState<ModuleId>('overview');
   const [query, setQuery] = useState('');
   const { vendors, loading, error, usingFallback, reload, setVendors } = useAdminData();
+
+  useEffect(() => {
+    const moduleFromHash = window.location.hash.slice(1) as ModuleId;
+    if (navItems.some((item) => item.id === moduleFromHash)) setActive(moduleFromHash);
+  }, []);
+
+  useEffect(() => {
+    window.history.replaceState(null, '', `#${active}`);
+  }, [active]);
 
   const content = useMemo(() => {
     if (active === 'overview') return <OverviewPage vendors={vendors} setActive={setActive} />;
