@@ -1573,6 +1573,254 @@ h1 {
   }
 }
 
+/* Fixed-height overview workspace for standard desktop screens. */
+@media (min-width: 901px) {
+  .hq-shell {
+    height: 100dvh;
+    overflow: hidden;
+  }
+
+  .hq-sidebar {
+    height: 100dvh;
+    padding: 12px 10px;
+    gap: 10px;
+    overflow: hidden;
+  }
+
+  .hq-brand {
+    gap: 9px;
+    padding: 0 6px;
+  }
+
+  .hq-brand strong {
+    font-size: 19px;
+  }
+
+  .hq-brand span {
+    margin-top: 3px;
+    font-size: 9px;
+  }
+
+  .hq-logo {
+    width: 30px;
+    height: 30px;
+  }
+
+  .hq-nav {
+    gap: 2px;
+  }
+
+  .hq-nav-button {
+    min-height: 33px;
+    padding: 0 9px;
+    gap: 9px;
+    font-size: 13px;
+  }
+
+  .hq-nav-button svg {
+    width: 17px;
+    height: 17px;
+  }
+
+  .hq-sidebar-bottom {
+    gap: 2px;
+  }
+
+  .system-card {
+    margin: 4px 0;
+    padding: 10px;
+    gap: 7px;
+  }
+
+  .system-card strong,
+  .system-card span {
+    font-size: 10px;
+  }
+
+  .hq-topbar {
+    height: 50px;
+    padding: 0 18px;
+  }
+
+  .search-box {
+    min-height: 34px;
+    width: min(420px, 39vw);
+    padding: 0 11px;
+    gap: 8px;
+    font-size: 13px;
+  }
+
+  .icon-button {
+    width: 32px;
+    height: 32px;
+  }
+
+  .backend-banner {
+    margin: 8px 18px 0;
+    padding: 7px 10px;
+    font-size: 12px;
+  }
+
+  .overview-stack {
+    height: calc(100dvh - 50px);
+    overflow: hidden;
+    padding: 12px 18px 16px;
+    gap: 12px;
+    grid-template-rows: auto 100px minmax(0, 1fr);
+  }
+
+  .overview-stack .hero-row {
+    min-height: 46px;
+    align-items: center;
+  }
+
+  .overview-stack h1 {
+    font-size: 25px;
+  }
+
+  .overview-stack .hero-row p {
+    margin-top: 3px;
+    font-size: 13px;
+  }
+
+  .overview-stack .hero-actions {
+    gap: 8px;
+    flex-wrap: nowrap;
+  }
+
+  .overview-stack .action-button {
+    min-height: 38px;
+    min-width: auto;
+    padding: 0 12px;
+    font-size: 12px;
+  }
+
+  .overview-stack .action-button svg {
+    width: 16px;
+    height: 16px;
+  }
+
+  .overview-stack .metrics-grid {
+    gap: 12px;
+  }
+
+  .overview-stack .metric-card {
+    min-height: 100px;
+    padding: 12px;
+    gap: 5px;
+  }
+
+  .overview-stack .metric-icon {
+    width: 30px;
+    height: 30px;
+  }
+
+  .overview-stack .metric-icon svg {
+    width: 17px;
+    height: 17px;
+  }
+
+  .overview-stack .metric-card strong {
+    font-size: 23px;
+  }
+
+  .overview-stack .metric-label,
+  .overview-stack .metric-trend {
+    font-size: 10px;
+  }
+
+  .overview-stack .metric-spark {
+    display: none;
+  }
+
+  .overview-stack .dashboard-grid {
+    min-height: 0;
+    gap: 12px;
+    grid-template-rows: minmax(0, 1.04fr) minmax(0, .96fr);
+  }
+
+  .overview-stack .chart-panel,
+  .overview-stack .chart-panel.wide,
+  .overview-stack .activity-panel,
+  .overview-stack .density-panel,
+  .overview-stack .bookings-panel {
+    min-height: 0;
+    padding: 16px;
+    border-radius: 10px;
+  }
+
+  .overview-stack .panel-head,
+  .overview-stack .panel-head.compact {
+    margin-bottom: 10px;
+  }
+
+  .overview-stack .panel-head h2,
+  .overview-stack .chart-panel h2 {
+    font-size: 17px;
+  }
+
+  .overview-stack .panel-head p {
+    margin-top: 2px;
+    font-size: 12px;
+  }
+
+  .overview-stack .segmented {
+    padding: 3px;
+  }
+
+  .overview-stack .segmented button {
+    padding: 6px 10px;
+    font-size: 12px;
+  }
+
+  .overview-stack .line-chart {
+    height: calc(100% - 50px);
+    min-height: 145px;
+  }
+
+  .overview-stack .activity-row {
+    grid-template-columns: 28px 1fr;
+    gap: 9px;
+    margin-bottom: 11px;
+  }
+
+  .overview-stack .activity-icon {
+    width: 28px;
+    height: 28px;
+  }
+
+  .overview-stack .activity-row strong {
+    font-size: 12px;
+  }
+
+  .overview-stack .activity-row p {
+    margin-top: 2px;
+    font-size: 10px;
+  }
+
+  .overview-stack .world-map {
+    height: calc(100% - 57px);
+    min-height: 130px;
+  }
+
+  .overview-stack .traffic-legend {
+    margin: 9px 0;
+    font-size: 11px;
+  }
+
+  .overview-stack .bars {
+    height: calc(100% - 44px);
+    min-height: 130px;
+  }
+
+  .overview-stack .floating-zap {
+    width: 38px;
+    height: 38px;
+    right: 14px;
+    bottom: 14px;
+  }
+}
+
 @media (max-width: 560px) {
   .hq-nav {
     grid-template-columns: 1fr;
@@ -2162,4 +2410,18 @@ button:disabled {
   .document-layout {
     grid-template-columns: 1fr;
   }
+}
+
+@media (min-width: 901px) {
+  .hq-main:has(.overview-stack) .backend-banner { display: none; }
+  .hq-sidebar { padding: 12px 10px; gap: 10px; overflow: hidden; }
+  .hq-brand strong { font-size: 19px; }
+  .hq-logo { width: 30px; height: 30px; }
+  .hq-nav { gap: 2px; }
+  .hq-nav-button { min-height: 33px; gap: 9px; padding: 0 9px; font-size: 13px; }
+  .hq-topbar { height: 50px; padding: 0 18px; }
+  .search-box { min-height: 34px; width: min(420px, 39vw); }
+  .overview-stack { height: calc(100dvh - 50px); padding: 12px 18px 16px; gap: 12px; grid-template-rows: auto 100px minmax(0, 1fr); }
+  .overview-stack .chart-panel, .overview-stack .chart-panel.wide, .overview-stack .activity-panel, .overview-stack .density-panel, .overview-stack .bookings-panel { min-height: 0; padding: 16px; }
+  .overview-stack .metric-card { min-height: 100px; padding: 12px; }
 }

@@ -803,7 +803,7 @@ function OverviewPage({ vendors, setActive }: { vendors: VendorRow[]; setActive:
   const load = capacity ? Math.round((machines / capacity) * 100) : 0;
 
   return (
-    <section className="page-stack">
+    <section className="page-stack overview-stack">
       <div className="hero-row">
         <div>
           <h1>Network Overview</h1>
