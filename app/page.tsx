@@ -15,15 +15,19 @@ import {
   Gamepad2,
   Grid2X2,
   HelpCircle,
+  Handshake,
   Info,
   LogOut,
+  Mail,
   Map,
   Monitor,
   MoreHorizontal,
   Plus,
+  Package,
   RefreshCcw,
   Search,
   Settings,
+  Settings2,
   SlidersHorizontal,
   Store,
   Trash2,
@@ -45,7 +49,12 @@ type ModuleId =
   | 'games'
   | 'bookings'
   | 'payments'
-  | 'analytics';
+  | 'analytics'
+  | 'subscriptions'
+  | 'plans'
+  | 'partners'
+  | 'products'
+  | 'newsletter';
 
 type VendorRow = {
   vendor_id: number;
@@ -139,6 +148,53 @@ type GameRow = {
   vendors_count?: number;
 };
 
+type PlanModel = {
+  code: string;
+  name: string;
+  enabled: boolean;
+  pc_limit: number;
+  monthly: number;
+  quarterly: number;
+  yearly: number;
+  features: string[];
+};
+
+type Collaborator = {
+  collaborator_id: string;
+  name: string;
+  brand_name: string;
+  email: string;
+  phone?: string;
+  commission_type: string;
+  commission_value: string;
+  min_order_quantity: number;
+  status: string;
+};
+
+type CollaboratorProduct = {
+  product_id: string;
+  name: string;
+  category: string;
+  unit_price: string;
+  stock_quantity: number;
+  min_order_quantity: number;
+  status: string;
+  description?: string;
+  sku?: string;
+};
+
+type SubscriptionRow = {
+  id: number;
+  vendor_id: number;
+  cafe_name: string;
+  owner_name: string;
+  status: string;
+  amount_paid: number;
+  period_start?: string;
+  period_end?: string;
+  package?: { code?: string; name?: string; pc_limit?: number };
+};
+
 const navItems: Array<{ id: ModuleId; label: string; icon: React.ComponentType<{ size?: number }> }> = [
   { id: 'overview', label: 'Dashboard', icon: Grid2X2 },
   { id: 'cafes', label: 'Cafes', icon: Store },
@@ -150,6 +206,11 @@ const navItems: Array<{ id: ModuleId; label: string; icon: React.ComponentType<{
   { id: 'bookings', label: 'Bookings', icon: Ticket },
   { id: 'payments', label: 'Payment Center', icon: CreditCard },
   { id: 'analytics', label: 'Analytics', icon: BarChart3 },
+  { id: 'subscriptions', label: 'Subscriptions', icon: Settings2 },
+  { id: 'plans', label: 'Plan Models', icon: Settings },
+  { id: 'partners', label: 'Partners', icon: Handshake },
+  { id: 'products', label: 'Products', icon: Package },
+  { id: 'newsletter', label: 'Newsletter', icon: Mail },
 ];
 
 const fallbackVendors: VendorRow[] = [
@@ -691,7 +752,9 @@ function VendorDetailModal({ vendor, onClose, onChanged }: {
           <section className="e2e-card">
             <h3>Team Access</h3>
             {(detail?.team_access?.staff || []).slice(0, 4).map((staff) => (
-              <div className="mini-row" key={staff.id}><span>{staff.name} · {staff.role}</span><b>{staff.is_active ? 'active' : 'inactive'}</b></div>
+              <div className="mini-row" key={staff.id}><span>{staff.name} · {staff.role}</span><div className="inline-actions"><b>{staff.is_active ? 'active' : 'inactive'}</b><button onClick={() => runAction(`Staff ${staff.is_active ? 'disabled' : 'enabled'}.`, () => apiRequest(`admin/vendors/${vendor.vendor_id}/team-access/staff/${staff.id}`, {
+                method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ is_active: !staff.is_active }),
+              }).then(() => undefined))}>{staff.is_active ? 'Disable' : 'Enable'}</button><button className="danger" onClick={() => runAction('Staff removed.', () => apiRequest(`admin/vendors/${vendor.vendor_id}/team-access/staff/${staff.id}`, { method: 'DELETE' }).then(() => undefined))}>Remove</button></div></div>
             ))}
             <div className="form-grid-compact two">
               <label>Staff Name<input value={staffName} onChange={(e) => setStaffName(e.target.value)} /></label>
@@ -711,6 +774,7 @@ function VendorDetailModal({ vendor, onClose, onChanged }: {
                   method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ package_code: code, immediate: true }),
                 }).then(() => undefined))}>{code.replace('_', ' ')}</button>
               ))}
+              <button onClick={() => runAction('Default plan provisioned.', () => apiRequest(`admin/vendors/${vendor.vendor_id}/subscriptions/provision-default`, { method: 'POST' }).then(() => undefined))}>Default Plan</button>
             </div>
           </section>
 
@@ -1294,6 +1358,131 @@ function GamesPage() {
   );
 }
 
+function SubscriptionsPage() {
+  const [rows, setRows] = useState<SubscriptionRow[]>([]);
+  const [plans, setPlans] = useState<PlanModel[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
+  const [planByVendor, setPlanByVendor] = useState<Record<number, string>>({});
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const [subscriptions, modelData] = await Promise.all([
+        apiRequest<{ subscriptions?: SubscriptionRow[] }>('admin/subscriptions?page=1&per_page=100'),
+        apiRequest<{ models?: PlanModel[] }>('admin/subscription-models'),
+      ]);
+      setRows(subscriptions.subscriptions || []);
+      setPlans(modelData.models || []);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Unable to load subscriptions.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { void load(); }, [load]);
+
+  const changePlan = async (vendorId: number, defaultPlan = false) => {
+    setMessage('');
+    setError('');
+    try {
+      if (defaultPlan) {
+        await apiRequest(`admin/vendors/${vendorId}/subscriptions/provision-default`, { method: 'POST' });
+      } else {
+        const packageCode = planByVendor[vendorId];
+        if (!packageCode) throw new Error('Choose a plan first.');
+        await apiRequest(`admin/vendors/${vendorId}/subscriptions/change`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ package_code: packageCode, immediate: true }),
+        });
+      }
+      setMessage(`Subscription updated for vendor #${vendorId}.`);
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Subscription update failed.');
+    }
+  };
+
+  return (
+    <section className="page-stack">
+      <div className="hero-row compact-hero"><div><h1>Subscriptions</h1><p>Current plan assignments and immediate provisioning controls.</p></div><button className="action-button secondary" onClick={load}><RefreshCcw size={16} /> Refresh</button></div>
+      {message ? <div className="action-notice good">{message}</div> : null}
+      {error ? <div className="action-notice bad">{error}</div> : null}
+      <div className="ops-table subscription-table">
+        <div className="ops-head"><span>Cafe</span><span>Owner</span><span>Plan</span><span>Status</span><span>Period</span><span>Change</span><span>Action</span></div>
+        {rows.map((row) => (
+          <div className="ops-row" key={row.id}>
+            <strong>#{row.vendor_id} · {row.cafe_name}</strong><span>{row.owner_name || '-'}</span><span>{row.package?.name || row.package?.code || '-'}</span><span>{row.status}</span><span>{row.period_end || '-'}</span>
+            <select value={planByVendor[row.vendor_id] || ''} onChange={(e) => setPlanByVendor((prev) => ({ ...prev, [row.vendor_id]: e.target.value }))}><option value="">Choose plan</option>{plans.filter((plan) => plan.enabled).map((plan) => <option key={plan.code} value={plan.code}>{plan.name}</option>)}</select>
+            <div className="inline-actions"><button disabled={loading} onClick={() => void changePlan(row.vendor_id)}>Apply</button><button disabled={loading} onClick={() => void changePlan(row.vendor_id, true)}>Default</button></div>
+          </div>
+        ))}
+        {!rows.length && !loading ? <div className="empty-state">No subscription rows available.</div> : null}
+      </div>
+    </section>
+  );
+}
+
+function PlanModelsPage() {
+  const [plans, setPlans] = useState<PlanModel[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
+  const load = useCallback(async () => {
+    setLoading(true); setError('');
+    try { setPlans((await apiRequest<{ models?: PlanModel[] }>('admin/subscription-models')).models || []); }
+    catch (e) { setError(e instanceof Error ? e.message : 'Unable to load plan models.'); }
+    finally { setLoading(false); }
+  }, []);
+  useEffect(() => { void load(); }, [load]);
+  const update = (code: string, key: keyof PlanModel, value: string | boolean) => setPlans((rows) => rows.map((plan) => plan.code === code ? { ...plan, [key]: typeof value === 'string' && ['pc_limit', 'monthly', 'quarterly', 'yearly'].includes(key) ? Number(value || 0) : value } : plan));
+  const save = async () => {
+    setMessage(''); setError('');
+    try {
+      await apiRequest('admin/subscription-models', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ models: plans }) });
+      setMessage('Plan catalog saved.');
+      await load();
+    } catch (e) { setError(e instanceof Error ? e.message : 'Unable to save plan models.'); }
+  };
+  return (
+    <section className="page-stack">
+      <div className="hero-row compact-hero"><div><h1>Plan Models</h1><p>Global subscription catalog, pricing, capacity, and availability.</p></div><div className="inline-actions"><button onClick={load}>Refresh</button><button className="action-button primary" disabled={loading} onClick={() => void save()}>Save Models</button></div></div>
+      {message ? <div className="action-notice good">{message}</div> : null}{error ? <div className="action-notice bad">{error}</div> : null}
+      <div className="plan-grid">{plans.map((plan) => <section className="e2e-card" key={plan.code}><div className="mini-row"><h3>{plan.name}</h3><label className="toggle-label"><input type="checkbox" checked={plan.enabled} onChange={(e) => update(plan.code, 'enabled', e.target.checked)} /> Active</label></div><small>{plan.code}</small><div className="form-grid-compact four"><label>PCs<input type="number" value={plan.pc_limit} onChange={(e) => update(plan.code, 'pc_limit', e.target.value)} /></label><label>Monthly<input type="number" value={plan.monthly} onChange={(e) => update(plan.code, 'monthly', e.target.value)} /></label><label>Quarterly<input type="number" value={plan.quarterly} onChange={(e) => update(plan.code, 'quarterly', e.target.value)} /></label><label>Yearly<input type="number" value={plan.yearly} onChange={(e) => update(plan.code, 'yearly', e.target.value)} /></label></div><p>{plan.features?.join(' · ') || 'No features configured.'}</p></section>)}</div>
+    </section>
+  );
+}
+
+function PartnersPage() {
+  const blank = { name: '', brand_name: '', email: '', phone: '', commission_type: 'percentage', commission_value: '10', min_order_quantity: '1', status: 'active' };
+  const [rows, setRows] = useState<Collaborator[]>([]); const [form, setForm] = useState(blank); const [editing, setEditing] = useState<string | null>(null); const [error, setError] = useState(''); const [message, setMessage] = useState('');
+  const load = useCallback(async () => { try { setRows(await apiRequest<Collaborator[]>('collaborators')); } catch (e) { setError(e instanceof Error ? e.message : 'Unable to load partners.'); } }, []);
+  useEffect(() => { void load(); }, [load]);
+  const save = async () => { setError(''); setMessage(''); try { await apiRequest(editing ? `collaborators/${editing}` : 'collaborators', { method: editing ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...form, commission_value: Number(form.commission_value), min_order_quantity: Number(form.min_order_quantity) }) }); setForm(blank); setEditing(null); setMessage('Partner saved.'); await load(); } catch (e) { setError(e instanceof Error ? e.message : 'Unable to save partner.'); } };
+  const remove = async (id: string) => { if (!window.confirm('Delete this partner?')) return; try { await apiRequest(`collaborators/${id}`, { method: 'DELETE' }); await load(); } catch (e) { setError(e instanceof Error ? e.message : 'Unable to delete partner.'); } };
+  return <section className="page-stack"><div className="hero-row compact-hero"><div><h1>Partners</h1><p>Collaborator accounts, commercial terms, and catalog ownership.</p></div><button onClick={load}>Refresh</button></div>{message ? <div className="action-notice good">{message}</div> : null}{error ? <div className="action-notice bad">{error}</div> : null}<section className="e2e-card"><div className="form-grid-compact four"><label>Name<input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></label><label>Brand<input value={form.brand_name} onChange={(e) => setForm({ ...form, brand_name: e.target.value })} /></label><label>Email<input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></label><label>Phone<input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></label><label>Commission<select value={form.commission_type} onChange={(e) => setForm({ ...form, commission_type: e.target.value })}><option value="percentage">Percentage</option><option value="fixed">Fixed</option></select></label><label>Value<input type="number" value={form.commission_value} onChange={(e) => setForm({ ...form, commission_value: e.target.value })} /></label><label>Minimum qty<input type="number" value={form.min_order_quantity} onChange={(e) => setForm({ ...form, min_order_quantity: e.target.value })} /></label><label>Status<select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}><option value="active">Active</option><option value="inactive">Inactive</option></select></label></div><div className="inline-actions"><button className="action-button primary" onClick={() => void save()}>{editing ? 'Update Partner' : 'Add Partner'}</button>{editing ? <button onClick={() => { setEditing(null); setForm(blank); }}>Cancel</button> : null}</div></section><div className="ops-table partners-table"><div className="ops-head"><span>Name</span><span>Brand</span><span>Email</span><span>Terms</span><span>Status</span><span>Actions</span></div>{rows.map((row) => <div className="ops-row" key={row.collaborator_id}><strong>{row.name}</strong><span>{row.brand_name}</span><span>{row.email}</span><span>{row.commission_type} · {row.commission_value}</span><span>{row.status}</span><div className="inline-actions"><button onClick={() => { setEditing(row.collaborator_id); setForm({ ...form, ...row, phone: row.phone || '', commission_value: String(row.commission_value), min_order_quantity: String(row.min_order_quantity) }); }}>Edit</button><button className="danger" onClick={() => void remove(row.collaborator_id)}>Delete</button></div></div>)}</div></section>;
+}
+
+function ProductsPage() {
+  const blank = { name: '', category: 'other', unit_price: '', sku: '', stock_quantity: '0', min_order_quantity: '1', status: 'active', description: '' };
+  const [partners, setPartners] = useState<Collaborator[]>([]); const [partnerId, setPartnerId] = useState(''); const [rows, setRows] = useState<CollaboratorProduct[]>([]); const [form, setForm] = useState(blank); const [editing, setEditing] = useState<string | null>(null); const [error, setError] = useState(''); const [message, setMessage] = useState('');
+  const loadPartners = useCallback(async () => { try { const data = await apiRequest<Collaborator[]>('collaborators'); setPartners(data); setPartnerId((current) => current || data[0]?.collaborator_id || ''); } catch (e) { setError(e instanceof Error ? e.message : 'Unable to load partners.'); } }, []);
+  const loadProducts = useCallback(async () => { if (!partnerId) return; try { setRows(await apiRequest<CollaboratorProduct[]>(`collaborators/${partnerId}/products`)); } catch (e) { setError(e instanceof Error ? e.message : 'Unable to load products.'); } }, [partnerId]);
+  useEffect(() => { void loadPartners(); }, [loadPartners]); useEffect(() => { void loadProducts(); }, [loadProducts]);
+  const save = async () => { if (!partnerId) return; setError(''); setMessage(''); try { const payload = { ...form, unit_price: Number(form.unit_price), stock_quantity: Number(form.stock_quantity), min_order_quantity: Number(form.min_order_quantity) }; await apiRequest(editing ? `products/${editing}` : `collaborators/${partnerId}/products`, editing ? { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) } : (() => { const body = new FormData(); Object.entries(payload).forEach(([key, value]) => body.append(key, String(value))); return { method: 'POST', body }; })()); setForm(blank); setEditing(null); setMessage('Product saved.'); await loadProducts(); } catch (e) { setError(e instanceof Error ? e.message : 'Unable to save product.'); } };
+  const remove = async (id: string) => { if (!window.confirm('Delete this product?')) return; try { await apiRequest(`products/${id}`, { method: 'DELETE' }); await loadProducts(); } catch (e) { setError(e instanceof Error ? e.message : 'Unable to delete product.'); } };
+  return <section className="page-stack"><div className="hero-row compact-hero"><div><h1>Products</h1><p>Partner inventory and product catalog management.</p></div><select value={partnerId} onChange={(e) => setPartnerId(e.target.value)}><option value="">Choose partner</option>{partners.map((partner) => <option key={partner.collaborator_id} value={partner.collaborator_id}>{partner.brand_name}</option>)}</select></div>{message ? <div className="action-notice good">{message}</div> : null}{error ? <div className="action-notice bad">{error}</div> : null}<section className="e2e-card"><div className="form-grid-compact four"><label>Name<input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></label><label>Category<input value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} /></label><label>Price<input type="number" value={form.unit_price} onChange={(e) => setForm({ ...form, unit_price: e.target.value })} /></label><label>SKU<input value={form.sku} onChange={(e) => setForm({ ...form, sku: e.target.value })} /></label><label>Stock<input type="number" value={form.stock_quantity} onChange={(e) => setForm({ ...form, stock_quantity: e.target.value })} /></label><label>Minimum qty<input type="number" value={form.min_order_quantity} onChange={(e) => setForm({ ...form, min_order_quantity: e.target.value })} /></label><label>Status<select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}><option value="active">Active</option><option value="inactive">Inactive</option></select></label><label>Description<input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></label></div><div className="inline-actions"><button className="action-button primary" disabled={!partnerId} onClick={() => void save()}>{editing ? 'Update Product' : 'Add Product'}</button>{editing ? <button onClick={() => { setEditing(null); setForm(blank); }}>Cancel</button> : null}</div></section><div className="ops-table products-table"><div className="ops-head"><span>Product</span><span>Category</span><span>Price</span><span>Stock</span><span>Status</span><span>Actions</span></div>{rows.map((row) => <div className="ops-row" key={row.product_id}><strong>{row.name}</strong><span>{row.category}</span><span>{formatMoney(Number(row.unit_price || 0), '₹')}</span><span>{row.stock_quantity}</span><span>{row.status}</span><div className="inline-actions"><button onClick={() => { setEditing(row.product_id); setForm({ name: row.name, category: row.category, unit_price: row.unit_price, sku: row.sku || '', stock_quantity: String(row.stock_quantity), min_order_quantity: String(row.min_order_quantity), status: row.status, description: row.description || '' }); }}>Edit</button><button className="danger" onClick={() => void remove(row.product_id)}>Delete</button></div></div>)}</div></section>;
+}
+
+function NewsletterPage({ vendors }: { vendors: VendorRow[] }) {
+  const [topic, setTopic] = useState(''); const [content, setContent] = useState(''); const [mode, setMode] = useState<'all' | 'selected'>('all'); const [selected, setSelected] = useState<number[]>([]); const [preview, setPreview] = useState(''); const [message, setMessage] = useState(''); const [error, setError] = useState('');
+  const payload = () => ({ topic: topic.trim(), content: content.trim(), mode, vendor_ids: mode === 'selected' ? selected : undefined });
+  const run = async (send: boolean) => { setError(''); setMessage(''); try { if (!topic.trim() || !content.trim()) throw new Error('Topic and content are required.'); if (mode === 'selected' && !selected.length) throw new Error('Select at least one cafe.'); const result = await apiRequest<{ data?: { preview_text?: string; recipient_count?: number; sent?: number } }>(`admin/newsletters/${send ? 'send' : 'preview'}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...payload(), ...(send ? { sent_by: 'super_admin_dashboard' } : {}) }) }); if (send) setMessage(`Newsletter sent to ${result.data?.sent ?? result.data?.recipient_count ?? 0} recipients.`); else setPreview(result.data?.preview_text || `Ready for ${result.data?.recipient_count ?? 0} recipients.`); } catch (e) { setError(e instanceof Error ? e.message : 'Newsletter action failed.'); } };
+  return <section className="page-stack"><div className="hero-row compact-hero"><div><h1>Newsletter</h1><p>Preview and send owner communications from the existing admin delivery service.</p></div></div>{message ? <div className="action-notice good">{message}</div> : null}{error ? <div className="action-notice bad">{error}</div> : null}<section className="e2e-card newsletter-card"><div className="form-grid-compact two"><label>Topic<input value={topic} onChange={(e) => setTopic(e.target.value)} placeholder="Service update" /></label><label>Audience<select value={mode} onChange={(e) => setMode(e.target.value as 'all' | 'selected')}><option value="all">All cafes</option><option value="selected">Selected cafes</option></select></label></div><label>Message<textarea value={content} onChange={(e) => setContent(e.target.value)} placeholder="Write the update..." /></label><div className="inline-actions"><button onClick={() => void run(false)}>Preview</button><button className="action-button primary" onClick={() => void run(true)}>Send Newsletter</button></div>{preview ? <pre className="newsletter-preview">{preview}</pre> : null}</section>{mode === 'selected' ? <div className="selectable-vendors">{vendors.map((vendor) => <label key={vendor.vendor_id}><input type="checkbox" checked={selected.includes(vendor.vendor_id)} onChange={(e) => setSelected((rows) => e.target.checked ? [...new Set([...rows, vendor.vendor_id])] : rows.filter((id) => id !== vendor.vendor_id))} /> {vendor.cafe_name}<small>{vendor.email || 'No email'}</small></label>)}</div> : null}</section>;
+}
+
 function AnalyticsPage({ vendors }: { vendors: VendorRow[] }) {
   const active = vendors.filter((vendor) => vendor.status === 'active').length;
   const pending = vendors.filter((vendor) => vendor.status === 'pending_verification').length;
@@ -1372,6 +1561,11 @@ export default function HomePage() {
     if (active === 'payments') return <PaymentsPage vendors={vendors} />;
     if (active === 'games') return <GamesPage />;
     if (active === 'analytics') return <AnalyticsPage vendors={vendors} />;
+    if (active === 'subscriptions') return <SubscriptionsPage />;
+    if (active === 'plans') return <PlanModelsPage />;
+    if (active === 'partners') return <PartnersPage />;
+    if (active === 'products') return <ProductsPage />;
+    if (active === 'newsletter') return <NewsletterPage vendors={vendors} />;
     return <OperationalPage active={active} vendors={vendors} />;
   }, [active, vendors, query, setVendors, reload]);
 

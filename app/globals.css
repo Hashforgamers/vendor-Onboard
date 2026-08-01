@@ -1437,6 +1437,142 @@ h1 {
   }
 }
 
+/* Compact controls for the restored operational modules. */
+.hq-sidebar {
+  overflow-y: auto;
+}
+
+.hq-nav-button {
+  min-height: 38px;
+  padding: 0 12px;
+  gap: 12px;
+  font-size: 15px;
+}
+
+.hq-nav-button svg {
+  flex: 0 0 auto;
+}
+
+.form-grid-compact.four {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.form-grid-compact label,
+.e2e-card > label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.form-grid-compact input,
+.form-grid-compact select,
+.e2e-card > label input,
+.e2e-card > label textarea,
+.hero-row > select,
+.ops-row select {
+  width: 100%;
+  min-height: 34px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: #17223a;
+  color: var(--text);
+  padding: 0 9px;
+  outline: none;
+}
+
+.e2e-card > label textarea {
+  min-height: 96px;
+  padding: 9px;
+  resize: vertical;
+}
+
+.plan-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 12px;
+}
+
+.toggle-label {
+  display: flex !important;
+  align-items: center;
+  gap: 6px;
+  color: var(--text) !important;
+}
+
+.toggle-label input {
+  width: auto;
+  min-height: auto;
+}
+
+.subscription-table .ops-head,
+.subscription-table .ops-row {
+  min-width: 1040px;
+  grid-template-columns: 1.25fr .85fr .75fr .7fr .8fr 1fr 1.05fr;
+}
+
+.partners-table .ops-head,
+.partners-table .ops-row,
+.products-table .ops-head,
+.products-table .ops-row {
+  min-width: 860px;
+  grid-template-columns: 1fr 1fr 1.2fr .9fr .65fr 1fr;
+}
+
+.empty-state {
+  padding: 20px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.newsletter-card {
+  max-width: 900px;
+}
+
+.newsletter-preview {
+  margin: 0;
+  white-space: pre-wrap;
+  color: #d8dcea;
+  font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.selectable-vendors {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 8px;
+}
+
+.selectable-vendors label {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 5px 8px;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, .025);
+  font-size: 13px;
+}
+
+.selectable-vendors small {
+  grid-column: 2;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (max-width: 900px) {
+  .form-grid-compact.four {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .form-grid-compact.four {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media (max-width: 560px) {
   .hq-nav {
     grid-template-columns: 1fr;
