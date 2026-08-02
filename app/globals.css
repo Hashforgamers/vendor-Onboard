@@ -2747,3 +2747,165 @@ input::placeholder, textarea::placeholder { color: #98a2b3; }
   .profile-details-grid > div:nth-last-child(-n + 2) { border-bottom: 1px solid var(--line); }
   .profile-details-grid > div:last-child { border-bottom: 0; }
 }
+
+/* Compact, high-contrast operational overview for the bright workspace. */
+.metric-card strong,
+.queue-count {
+  color: #172033;
+}
+
+.metric-label,
+.metric-trend,
+.dashboard-list small,
+.queue-copy,
+.capacity-copy {
+  color: #657187;
+}
+
+.overview-stack .metric-card {
+  min-height: 100px;
+  padding: 12px;
+  gap: 4px;
+  align-content: center;
+}
+
+.overview-stack .metric-top { min-height: 28px; }
+.overview-stack .metric-icon { width: 28px; height: 28px; }
+.overview-stack .metric-icon svg { width: 16px; height: 16px; }
+
+.overview-stack .metric-label {
+  font-size: 10px;
+  line-height: 1.2;
+}
+
+.overview-stack .metric-card strong {
+  font-size: 24px;
+  line-height: 1.05;
+}
+
+.overview-stack .metric-spark { display: none; }
+.overview-stack .metric-trend { font-size: 11px; }
+
+.overview-stack .chart-panel,
+.overview-stack .activity-panel,
+.overview-stack .density-panel,
+.overview-stack .bookings-panel {
+  min-height: 0;
+  padding: 16px;
+}
+
+.overview-stack .panel-head h2,
+.overview-stack .activity-panel h2,
+.overview-stack .density-panel h2,
+.overview-stack .bookings-panel h2 {
+  color: #172033;
+  font-size: 16px;
+  line-height: 1.25;
+}
+
+.dashboard-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.dashboard-list > button {
+  display: flex;
+  width: 100%;
+  min-height: 50px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid #dce3ec;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #172033;
+  padding: 9px 10px;
+  text-align: left;
+}
+
+.dashboard-list > button:hover {
+  border-color: #b8c8d9;
+  background: #f7f9fc;
+}
+
+.dashboard-list > button span {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.dashboard-list > button strong {
+  overflow: hidden;
+  color: #172033;
+  font-size: 13px;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dashboard-list > button small {
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dashboard-list .status-pill { flex: 0 0 auto; }
+
+.overview-stack .queue-count {
+  margin: 18px 0 2px;
+  font-size: 28px;
+  line-height: 1;
+}
+
+.overview-stack .activity-panel p,
+.overview-stack .bookings-panel p,
+.overview-stack .density-panel p {
+  color: #657187;
+}
+
+.overview-stack .bar-row {
+  grid-template-columns: minmax(110px, 180px) minmax(80px, 1fr) 28px;
+  gap: 10px;
+}
+
+.overview-stack .bar-row span,
+.overview-stack .bar-row b {
+  color: #334155;
+  font-size: 12px;
+}
+
+@media (min-width: 901px) {
+  .overview-stack {
+    height: auto;
+    min-height: calc(100dvh - 50px);
+    grid-template-rows: none;
+    align-content: start;
+  }
+
+  .overview-stack .metrics-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  }
+
+  .live-dashboard-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.8fr) minmax(260px, 0.9fr);
+    grid-template-areas:
+      "attention approvals"
+      "plans capacity";
+    gap: 12px;
+    align-items: stretch;
+  }
+
+  .live-dashboard-grid .wide { grid-area: attention; min-height: 195px; }
+  .live-dashboard-grid .activity-panel { grid-area: approvals; min-height: 195px; }
+  .live-dashboard-grid .density-panel { grid-area: plans; min-height: 145px; }
+  .live-dashboard-grid .bookings-panel { grid-area: capacity; min-height: 145px; }
+}
+
+@media (max-width: 900px) {
+  .live-dashboard-grid { grid-template-columns: 1fr; }
+  .overview-stack .bar-row { grid-template-columns: minmax(90px, 130px) minmax(60px, 1fr) 24px; }
+}
