@@ -1507,8 +1507,26 @@ h1 {
 
 .subscription-table .ops-head,
 .subscription-table .ops-row {
-  min-width: 1040px;
-  grid-template-columns: 1.25fr .85fr .75fr .7fr .8fr 1fr 1.05fr;
+  min-width: 1320px;
+  grid-template-columns: 1.25fr .8fr .75fr .55fr 1fr .85fr 1.75fr;
+}
+
+.subscription-period-controls {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) auto auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.subscription-period-controls input {
+  width: 100%;
+  min-height: 34px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: #17223a;
+  color: var(--text);
+  padding: 0 9px;
+  outline: none;
 }
 
 .partners-table .ops-head,
@@ -2578,7 +2596,7 @@ h1 { color: var(--text); text-shadow: none; }
 .metric-card { box-shadow: 0 1px 2px rgba(19, 32, 51, .04); }
 .metric-icon, .store-badge, .module-icon { background: #edf3fa; color: #28688f; }
 .action-button.secondary, .inline-actions button, .ops-row button, .e2e-card button { background: #fff; border-color: var(--line-strong); color: #26334a; }
-.form-grid-compact input, .form-grid-compact select, .e2e-card > label input, .e2e-card > label textarea, .hero-row > select, .ops-row select { background: #fff; border-color: var(--line-strong); color: var(--text); }
+.form-grid-compact input, .form-grid-compact select, .e2e-card > label input, .e2e-card > label textarea, .hero-row > select, .ops-row select, .subscription-period-controls input { background: #fff; border-color: var(--line-strong); color: var(--text); }
 .filters-row { background: #f8f9fb; border-bottom: 1px solid var(--line); }
 .filters-row select, .segmented button, .performance-toggle button, .pagination-row button { background: #fff; border-color: var(--line-strong); color: var(--text); }
 .table-head { background: #f7f8fa; color: #718096; }

@@ -69,6 +69,7 @@ type VendorRow = {
     inactive_over_90_days?: boolean;
     package?: { name?: string; code?: string; pc_limit?: number } | null;
     amount_paid?: number;
+    period_start?: string | null;
     period_end?: string | null;
   };
   team_access?: { total: number; active: number };
@@ -326,6 +327,21 @@ async function optionalApiRequest<T>(path: string, fallback: T): Promise<T> {
 
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
+}
+
+function dateInputValue(value?: string | null) {
+  if (!value) return '';
+  const raw = String(value);
+  if (/^\d{4}-\d{2}-\d{2}/.test(raw)) return raw.slice(0, 10);
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return '';
+  return parsed.toISOString().slice(0, 10);
+}
+
+function addDaysIso(days: number) {
+  const date = new Date();
+  date.setDate(date.getDate() + days);
+  return date.toISOString().slice(0, 10);
 }
 
 function to12h(time24: string) {
@@ -634,6 +650,10 @@ function VendorDetailModal({ vendor, onClose, onChanged }: {
   const [bookingQueue, setBookingQueue] = useState<BookingQueueRow[]>([]);
   const [activeTab, setActiveTab] = useState<CafeDetailTab>('profile');
   const [promotionPlan, setPromotionPlan] = useState('early_onboard');
+  const [manualPlan, setManualPlan] = useState(vendor.subscription?.package?.code || 'early_onboard');
+  const [manualStart, setManualStart] = useState(dateInputValue(vendor.subscription?.period_start) || todayIso());
+  const [manualEnd, setManualEnd] = useState(addDaysIso(30));
+  const [manualAmount, setManualAmount] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -671,6 +691,25 @@ function VendorDetailModal({ vendor, onClose, onChanged }: {
   };
   const confirmAndRun = (prompt: string, label: string, fn: () => Promise<void>) => {
     if (window.confirm(prompt)) void runAction(label, fn);
+  };
+
+  const applyManualPlan = () => {
+    const body = {
+      package_code: manualPlan,
+      immediate: true,
+      unit_amount: Number(manualAmount || 0),
+      period_start: manualStart,
+      period_end: manualEnd,
+    };
+    confirmAndRun(
+      `Apply ${manualPlan.replace('_', ' ')} from ${manualStart} to ${manualEnd}?`,
+      `Plan changed to ${manualPlan}.`,
+      () => apiRequest(`admin/vendors/${vendor.vendor_id}/subscriptions/change`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      }).then(() => undefined)
+    );
   };
 
   const docs = detail?.documents || [];
@@ -795,7 +834,14 @@ function VendorDetailModal({ vendor, onClose, onChanged }: {
           {activeTab === 'plan' ? <section className="e2e-card">
             <h3>Subscription</h3>
             <p>{vendor.subscription?.package?.name || 'No plan'} · {vendor.subscription?.status || 'unknown'}</p>
+            <div className="form-grid-compact four">
+              <label>Plan<select value={manualPlan} onChange={(event) => setManualPlan(event.target.value)}><option value="early_onboard">Early Onboard</option><option value="base">Base</option><option value="grow">Grow</option><option value="elite">Elite</option></select></label>
+              <label>From<input type="date" value={manualStart} onChange={(event) => setManualStart(event.target.value)} /></label>
+              <label>To<input type="date" value={manualEnd} min={manualStart || undefined} onChange={(event) => setManualEnd(event.target.value)} /></label>
+              <label>Amount<input type="number" min="0" value={manualAmount} onChange={(event) => setManualAmount(event.target.value)} placeholder="0" /></label>
+            </div>
             <div className="inline-actions">
+              <button disabled={!manualPlan || !manualStart || !manualEnd} onClick={applyManualPlan}>Apply Period</button>
               {['early_onboard', 'base', 'grow', 'elite'].map((code) => (
                 <button key={code} onClick={() => confirmAndRun(`Change this cafe to the ${code.replace('_', ' ')} plan?`, `Plan changed to ${code}.`, () => apiRequest(`admin/vendors/${vendor.vendor_id}/subscriptions/change`, {
                   method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ package_code: code, immediate: true }),
@@ -1400,6 +1446,7 @@ function SubscriptionsPage() {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [planByVendor, setPlanByVendor] = useState<Record<number, string>>({});
+  const [periodByVendor, setPeriodByVendor] = useState<Record<number, { start: string; end: string; amount: string }>>({});
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -1411,6 +1458,17 @@ function SubscriptionsPage() {
       ]);
       setRows(subscriptions.subscriptions || []);
       setPlans(modelData.models || []);
+      setPeriodByVendor(() => {
+        const next: Record<number, { start: string; end: string; amount: string }> = {};
+        (subscriptions.subscriptions || []).forEach((row) => {
+          next[row.vendor_id] = {
+            start: dateInputValue(row.period_start) || todayIso(),
+            end: dateInputValue(row.period_end) || addDaysIso(30),
+            amount: '',
+          };
+        });
+        return next;
+      });
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Unable to load subscriptions.');
     } finally {
@@ -1429,8 +1487,17 @@ function SubscriptionsPage() {
       } else {
         const packageCode = planByVendor[vendorId];
         if (!packageCode) throw new Error('Choose a plan first.');
+        const period = periodByVendor[vendorId];
         await apiRequest(`admin/vendors/${vendorId}/subscriptions/change`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ package_code: packageCode, immediate: true }),
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            package_code: packageCode,
+            immediate: true,
+            unit_amount: Number(period?.amount || 0),
+            period_start: period?.start || todayIso(),
+            period_end: period?.end || addDaysIso(30),
+          }),
         });
       }
       setMessage(`Subscription updated for vendor #${vendorId}.`);
@@ -1447,13 +1514,21 @@ function SubscriptionsPage() {
       {error ? <div className="action-notice bad">{error}</div> : null}
       <div className="ops-table subscription-table">
         <div className="ops-head"><span>Cafe</span><span>Owner</span><span>Plan</span><span>Status</span><span>Period</span><span>Change</span><span>Action</span></div>
-        {rows.map((row) => (
+        {rows.map((row) => {
+          const period = periodByVendor[row.vendor_id] || { start: dateInputValue(row.period_start) || todayIso(), end: dateInputValue(row.period_end) || addDaysIso(30), amount: '' };
+          return (
           <div className="ops-row" key={row.id}>
-            <strong>#{row.vendor_id} · {row.cafe_name}</strong><span>{row.owner_name || '-'}</span><span>{row.package?.name || row.package?.code || '-'}</span><span>{row.status}</span><span>{row.period_end || '-'}</span>
+            <strong>#{row.vendor_id} · {row.cafe_name}</strong><span>{row.owner_name || '-'}</span><span>{row.package?.name || row.package?.code || '-'}</span><span>{row.status}</span><span>{dateInputValue(row.period_start) || '-'} to {dateInputValue(row.period_end) || '-'}</span>
             <select value={planByVendor[row.vendor_id] || ''} onChange={(e) => setPlanByVendor((prev) => ({ ...prev, [row.vendor_id]: e.target.value }))}><option value="">Choose plan</option>{plans.filter((plan) => plan.enabled).map((plan) => <option key={plan.code} value={plan.code}>{plan.name}</option>)}</select>
-            <div className="inline-actions"><button disabled={loading} onClick={() => void changePlan(row.vendor_id)}>Apply</button><button disabled={loading} onClick={() => void changePlan(row.vendor_id, true)}>Default</button></div>
+            <div className="subscription-period-controls">
+              <input type="date" aria-label={`Plan start for ${row.cafe_name}`} value={period.start} onChange={(e) => setPeriodByVendor((prev) => ({ ...prev, [row.vendor_id]: { ...period, start: e.target.value } }))} />
+              <input type="date" aria-label={`Plan end for ${row.cafe_name}`} min={period.start || undefined} value={period.end} onChange={(e) => setPeriodByVendor((prev) => ({ ...prev, [row.vendor_id]: { ...period, end: e.target.value } }))} />
+              <input type="number" min="0" aria-label={`Plan amount for ${row.cafe_name}`} value={period.amount} placeholder="0" onChange={(e) => setPeriodByVendor((prev) => ({ ...prev, [row.vendor_id]: { ...period, amount: e.target.value } }))} />
+              <button disabled={loading || !period.start || !period.end} onClick={() => void changePlan(row.vendor_id)}>Apply</button>
+              <button disabled={loading} onClick={() => void changePlan(row.vendor_id, true)}>Default</button>
+            </div>
           </div>
-        ))}
+        );})}
         {!rows.length && !loading ? <div className="empty-state">No subscription rows available.</div> : null}
       </div>
     </section>
