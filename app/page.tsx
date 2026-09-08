@@ -71,6 +71,8 @@ type VendorRow = {
     amount_paid?: number;
     period_start?: string | null;
     period_end?: string | null;
+    set_by?: string;
+    set_by_super_admin?: boolean;
   };
   team_access?: { total: number; active: number };
   deactivation_notifications?: {
@@ -112,6 +114,9 @@ type VendorDetail = {
     amount_paid: number;
     period_start: string;
     period_end: string;
+    is_active?: boolean;
+    set_by?: string;
+    set_by_super_admin?: boolean;
     package?: { name?: string; code?: string; pc_limit?: number };
   }>;
   team_access?: {
@@ -148,11 +153,13 @@ type PlanModel = {
   code: string;
   name: string;
   enabled: boolean;
+  active?: boolean;
   pc_limit: number;
   monthly: number;
   quarterly: number;
   yearly: number;
   features: string[];
+  plan_features?: string[];
 };
 
 type Collaborator = {
@@ -185,6 +192,9 @@ type SubscriptionRow = {
   cafe_name: string;
   owner_name: string;
   status: string;
+  is_active?: boolean;
+  set_by?: string;
+  set_by_super_admin?: boolean;
   amount_paid: number;
   period_start?: string;
   period_end?: string;
@@ -359,6 +369,14 @@ function classNames(...items: Array<string | false | null | undefined>) {
 
 function formatMoney(value: number, currency = '$') {
   return `${currency}${Math.round(value).toLocaleString()}`;
+}
+
+function normalizePlanModel(plan: PlanModel): PlanModel {
+  return {
+    ...plan,
+    enabled: Boolean(plan.enabled ?? plan.active),
+    features: Array.isArray(plan.features) ? plan.features : (plan.plan_features || []),
+  };
 }
 
 function statusTone(status: string) {
@@ -651,7 +669,7 @@ function VendorDetailModal({ vendor, onClose, onChanged }: {
   const [activeTab, setActiveTab] = useState<CafeDetailTab>('profile');
   const [promotionPlan, setPromotionPlan] = useState('early_onboard');
   const [manualPlan, setManualPlan] = useState(vendor.subscription?.package?.code || 'early_onboard');
-  const [manualStart, setManualStart] = useState(dateInputValue(vendor.subscription?.period_start) || todayIso());
+  const [manualStart, setManualStart] = useState(todayIso());
   const [manualEnd, setManualEnd] = useState(addDaysIso(30));
   const [manualAmount, setManualAmount] = useState('');
 
@@ -715,6 +733,10 @@ function VendorDetailModal({ vendor, onClose, onChanged }: {
   const docs = detail?.documents || [];
   const contact = detail?.contact;
   const address = detail?.address;
+  const activeSubscription = detail?.subscriptions?.find((subscription) => subscription.is_active) || detail?.subscriptions?.[0];
+  const currentPlanName = activeSubscription?.package?.name || vendor.subscription?.package?.name || 'No plan';
+  const currentPlanStatus = activeSubscription?.is_active ? 'active now' : (activeSubscription?.status || vendor.subscription?.status || 'unknown');
+  const currentPlanSource = activeSubscription?.set_by_super_admin || vendor.subscription?.set_by_super_admin ? 'Super admin' : null;
   const fullAddress = [address?.addressLine1, address?.addressLine2, address?.state, address?.pincode, address?.country]
     .filter(Boolean)
     .join(', ') || 'Address not provided';
@@ -833,7 +855,8 @@ function VendorDetailModal({ vendor, onClose, onChanged }: {
 
           {activeTab === 'plan' ? <section className="e2e-card">
             <h3>Subscription</h3>
-            <p>{vendor.subscription?.package?.name || 'No plan'} · {vendor.subscription?.status || 'unknown'}</p>
+            <p>{currentPlanName} · {currentPlanStatus}{currentPlanSource ? ` · ${currentPlanSource}` : ''}</p>
+            {activeSubscription ? <div className="mini-row"><span>Active period</span><b>{dateInputValue(activeSubscription.period_start) || '-'} to {dateInputValue(activeSubscription.period_end) || '-'}</b></div> : null}
             <div className="form-grid-compact four">
               <label>Plan<select value={manualPlan} onChange={(event) => setManualPlan(event.target.value)}><option value="early_onboard">Early Onboard</option><option value="base">Base</option><option value="grow">Grow</option><option value="elite">Elite</option></select></label>
               <label>From<input type="date" value={manualStart} onChange={(event) => setManualStart(event.target.value)} /></label>
@@ -1462,8 +1485,8 @@ function SubscriptionsPage() {
         const next: Record<number, { start: string; end: string; amount: string }> = {};
         (subscriptions.subscriptions || []).forEach((row) => {
           next[row.vendor_id] = {
-            start: dateInputValue(row.period_start) || todayIso(),
-            end: dateInputValue(row.period_end) || addDaysIso(30),
+            start: todayIso(),
+            end: addDaysIso(30),
             amount: '',
           };
         });
@@ -1515,10 +1538,10 @@ function SubscriptionsPage() {
       <div className="ops-table subscription-table">
         <div className="ops-head"><span>Cafe</span><span>Owner</span><span>Plan</span><span>Status</span><span>Period</span><span>Change</span><span>Action</span></div>
         {rows.map((row) => {
-          const period = periodByVendor[row.vendor_id] || { start: dateInputValue(row.period_start) || todayIso(), end: dateInputValue(row.period_end) || addDaysIso(30), amount: '' };
+          const period = periodByVendor[row.vendor_id] || { start: todayIso(), end: addDaysIso(30), amount: '' };
           return (
           <div className="ops-row" key={row.id}>
-            <strong>#{row.vendor_id} · {row.cafe_name}</strong><span>{row.owner_name || '-'}</span><span>{row.package?.name || row.package?.code || '-'}</span><span>{row.status}</span><span>{dateInputValue(row.period_start) || '-'} to {dateInputValue(row.period_end) || '-'}</span>
+            <strong>#{row.vendor_id} · {row.cafe_name}</strong><span>{row.owner_name || '-'}</span><span>{row.package?.name || row.package?.code || '-'}{row.set_by_super_admin ? <small className="source-note">Super admin</small> : null}</span><span><b className={classNames('status-pill', row.is_active ? 'good' : statusTone(row.status))}>{row.is_active ? 'active now' : row.status}</b></span><span>{dateInputValue(row.period_start) || '-'} to {dateInputValue(row.period_end) || '-'}</span>
             <select value={planByVendor[row.vendor_id] || ''} onChange={(e) => setPlanByVendor((prev) => ({ ...prev, [row.vendor_id]: e.target.value }))}><option value="">Choose plan</option>{plans.filter((plan) => plan.enabled).map((plan) => <option key={plan.code} value={plan.code}>{plan.name}</option>)}</select>
             <div className="subscription-period-controls">
               <input type="date" aria-label={`Plan start for ${row.cafe_name}`} value={period.start} onChange={(e) => setPeriodByVendor((prev) => ({ ...prev, [row.vendor_id]: { ...period, start: e.target.value } }))} />
@@ -1536,18 +1559,43 @@ function SubscriptionsPage() {
 }
 
 function PlanModelsPage() {
+  const emptyPlan = { code: '', name: '', enabled: true, pc_limit: 0, monthly: 0, quarterly: 0, yearly: 0, features: [] as string[] };
   const [plans, setPlans] = useState<PlanModel[]>([]);
+  const [newPlan, setNewPlan] = useState(emptyPlan);
+  const [newFeatures, setNewFeatures] = useState('');
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+
   const load = useCallback(async () => {
     setLoading(true); setError('');
-    try { setPlans((await apiRequest<{ models?: PlanModel[] }>('admin/subscription-models')).models || []); }
+    try { setPlans(((await apiRequest<{ models?: PlanModel[] }>('admin/subscription-models')).models || []).map(normalizePlanModel)); }
     catch (e) { setError(e instanceof Error ? e.message : 'Unable to load plan models.'); }
     finally { setLoading(false); }
   }, []);
+
   useEffect(() => { void load(); }, [load]);
+
   const update = (code: string, key: keyof PlanModel, value: string | boolean) => setPlans((rows) => rows.map((plan) => plan.code === code ? { ...plan, [key]: typeof value === 'string' && ['pc_limit', 'monthly', 'quarterly', 'yearly'].includes(key) ? Number(value || 0) : value } : plan));
+  const updateFeatures = (code: string, value: string) => setPlans((rows) => rows.map((plan) => plan.code === code ? { ...plan, features: value.split('\n').map((item) => item.trim()).filter(Boolean) } : plan));
+  const normalizePlanCode = (value: string) => value.toLowerCase().replace(/[^a-z0-9_]+/g, '_').replace(/^_+|_+$/g, '');
+
+  const addPlan = () => {
+    setError('');
+    const code = normalizePlanCode(newPlan.code);
+    if (!code || !newPlan.name.trim()) {
+      setError('Plan code and name are required.');
+      return;
+    }
+    if (plans.some((plan) => plan.code === code)) {
+      setError('A plan with this code already exists.');
+      return;
+    }
+    setPlans((rows) => [...rows, { ...newPlan, code, name: newPlan.name.trim(), features: newFeatures.split('\n').map((item) => item.trim()).filter(Boolean) }]);
+    setNewPlan(emptyPlan);
+    setNewFeatures('');
+  };
+
   const save = async () => {
     setMessage(''); setError('');
     try {
@@ -1556,11 +1604,37 @@ function PlanModelsPage() {
       await load();
     } catch (e) { setError(e instanceof Error ? e.message : 'Unable to save plan models.'); }
   };
+
+  const removePlan = async (plan: PlanModel) => {
+    setMessage(''); setError('');
+    if (!window.confirm(`Delete ${plan.name}? Plans with subscription history will be marked inactive instead.`)) return;
+    try {
+      const result = await apiRequest<{ models?: PlanModel[]; message?: string; deactivated?: boolean }>(`admin/subscription-models/${encodeURIComponent(plan.code)}`, { method: 'DELETE' });
+      setPlans((result.models || []).map(normalizePlanModel));
+      setMessage(result.message || (result.deactivated ? 'Plan marked inactive.' : 'Plan deleted.'));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Unable to delete plan.');
+    }
+  };
+
   return (
     <section className="page-stack">
       <div className="hero-row compact-hero"><div><h1>Plan Models</h1><p>Global subscription catalog, pricing, capacity, and availability.</p></div><div className="inline-actions"><button onClick={load}>Refresh</button><button className="action-button primary" disabled={loading} onClick={() => void save()}>Save Models</button></div></div>
       {message ? <div className="action-notice good">{message}</div> : null}{error ? <div className="action-notice bad">{error}</div> : null}
-      <div className="plan-grid">{plans.map((plan) => <section className="e2e-card" key={plan.code}><div className="mini-row"><h3>{plan.name}</h3><label className="toggle-label"><input type="checkbox" checked={plan.enabled} onChange={(e) => update(plan.code, 'enabled', e.target.checked)} /> Active</label></div><small>{plan.code}</small><div className="form-grid-compact four"><label>PCs<input type="number" value={plan.pc_limit} onChange={(e) => update(plan.code, 'pc_limit', e.target.value)} /></label><label>Monthly<input type="number" value={plan.monthly} onChange={(e) => update(plan.code, 'monthly', e.target.value)} /></label><label>Quarterly<input type="number" value={plan.quarterly} onChange={(e) => update(plan.code, 'quarterly', e.target.value)} /></label><label>Yearly<input type="number" value={plan.yearly} onChange={(e) => update(plan.code, 'yearly', e.target.value)} /></label></div><p>{plan.features?.join(' · ') || 'No features configured.'}</p></section>)}</div>
+      <section className="e2e-card">
+        <div className="mini-row"><h3>Create Plan</h3><button onClick={addPlan}>Add Draft</button></div>
+        <div className="form-grid-compact four">
+          <label>Code<input value={newPlan.code} onChange={(e) => setNewPlan((plan) => ({ ...plan, code: normalizePlanCode(e.target.value) }))} placeholder="custom_plan" /></label>
+          <label>Name<input value={newPlan.name} onChange={(e) => setNewPlan((plan) => ({ ...plan, name: e.target.value }))} placeholder="Custom Plan" /></label>
+          <label>PCs<input type="number" min="0" value={newPlan.pc_limit} onChange={(e) => setNewPlan((plan) => ({ ...plan, pc_limit: Number(e.target.value || 0) }))} /></label>
+          <label>Status<select value={newPlan.enabled ? 'active' : 'inactive'} onChange={(e) => setNewPlan((plan) => ({ ...plan, enabled: e.target.value === 'active' }))}><option value="active">Active</option><option value="inactive">Inactive</option></select></label>
+          <label>Monthly<input type="number" min="0" value={newPlan.monthly} onChange={(e) => setNewPlan((plan) => ({ ...plan, monthly: Number(e.target.value || 0) }))} /></label>
+          <label>Quarterly<input type="number" min="0" value={newPlan.quarterly} onChange={(e) => setNewPlan((plan) => ({ ...plan, quarterly: Number(e.target.value || 0) }))} /></label>
+          <label>Yearly<input type="number" min="0" value={newPlan.yearly} onChange={(e) => setNewPlan((plan) => ({ ...plan, yearly: Number(e.target.value || 0) }))} /></label>
+        </div>
+        <label>Features<textarea value={newFeatures} onChange={(e) => setNewFeatures(e.target.value)} placeholder="One feature per line" /></label>
+      </section>
+      <div className="plan-grid">{plans.map((plan) => <section className="e2e-card" key={plan.code}><div className="mini-row"><h3>{plan.name}</h3><b className={classNames('status-pill', plan.enabled ? 'good' : 'bad')}>{plan.enabled ? 'active' : 'inactive'}</b></div><div className="form-grid-compact two"><label>Name<input value={plan.name} onChange={(e) => update(plan.code, 'name', e.target.value)} /></label><label>Status<select value={plan.enabled ? 'active' : 'inactive'} onChange={(e) => update(plan.code, 'enabled', e.target.value === 'active')}><option value="active">Active</option><option value="inactive">Inactive</option></select></label></div><small>{plan.code}</small><div className="form-grid-compact four"><label>PCs<input type="number" min="0" value={plan.pc_limit} onChange={(e) => update(plan.code, 'pc_limit', e.target.value)} /></label><label>Monthly<input type="number" min="0" value={plan.monthly} onChange={(e) => update(plan.code, 'monthly', e.target.value)} /></label><label>Quarterly<input type="number" min="0" value={plan.quarterly} onChange={(e) => update(plan.code, 'quarterly', e.target.value)} /></label><label>Yearly<input type="number" min="0" value={plan.yearly} onChange={(e) => update(plan.code, 'yearly', e.target.value)} /></label></div><label>Features<textarea value={(plan.features || []).join('\n')} onChange={(e) => updateFeatures(plan.code, e.target.value)} /></label><div className="inline-actions"><button onClick={() => void save()}>Save</button><button className="danger" onClick={() => void removePlan(plan)}>Delete</button></div></section>)}</div>
     </section>
   );
 }

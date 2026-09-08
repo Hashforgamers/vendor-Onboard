@@ -1529,6 +1529,13 @@ h1 {
   outline: none;
 }
 
+.source-note {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
 .partners-table .ops-head,
 .partners-table .ops-row,
 .products-table .ops-head,
