@@ -213,6 +213,8 @@ const navItems: Array<{ id: ModuleId; label: string; icon: React.ComponentType<{
   { id: 'approval', label: 'Approval Center', icon: ClipboardCheck },
   { id: 'games', label: 'Games', icon: Gamepad2 },
   { id: 'payments', label: 'Payment Center', icon: CreditCard },
+  { id: 'plans', label: 'Subscription Plans', icon: SlidersHorizontal },
+  { id: 'subscriptions', label: 'Cafe Subscriptions', icon: Monitor },
   { id: 'partners', label: 'Partners', icon: Handshake },
   { id: 'products', label: 'Catalog', icon: Package },
   { id: 'newsletter', label: 'Newsletter', icon: Mail },
@@ -1562,8 +1564,14 @@ function SubscriptionsPage() {
   );
 }
 
+const PLAN_FEATURE_LABELS: Record<string, string> = {
+  kiosk: 'PC kiosk', pricing: 'Console pricing', cafe_wallet: 'Cafe wallet',
+  passes: 'Pass management', food: 'Extra Services', analytics: 'Reports & analytics',
+  tournaments: 'Tournaments', staff: 'Staff management',
+};
+
 function PlanModelsPage() {
-  const emptyPlan = { code: '', name: '', enabled: true, pc_limit: 0, monthly: 0, quarterly: 0, yearly: 0, features: [] as string[], extra_pc_monthly: 0, entitlements: [] as string[] };
+  const emptyPlan = { code: '', name: '', enabled: false, pc_limit: 0, monthly: 0, quarterly: 0, yearly: 0, features: [] as string[], extra_pc_monthly: 0, entitlements: [] as string[] };
   const [plans, setPlans] = useState<PlanModel[]>([]);
   const [newPlan, setNewPlan] = useState(emptyPlan);
   const [newFeatures, setNewFeatures] = useState('');
@@ -1604,7 +1612,7 @@ function PlanModelsPage() {
     setMessage(''); setError('');
     try {
       await apiRequest('admin/subscription-models', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ models: plans }) });
-      setMessage('Plan catalog saved.');
+      setMessage('Plans saved. Active packages are now available for cafes to purchase; drafts remain hidden.');
       await load();
     } catch (e) { setError(e instanceof Error ? e.message : 'Unable to save plan models.'); }
   };
@@ -1623,8 +1631,9 @@ function PlanModelsPage() {
 
   return (
     <section className="page-stack">
-      <div className="hero-row compact-hero"><div><h1>Plan Models</h1><p>Global subscription catalog, pricing, capacity, and availability.</p></div><div className="inline-actions"><button onClick={load}>Refresh</button><button className="action-button primary" disabled={loading} onClick={() => void save()}>Save Models</button></div></div>
+      <div className="hero-row compact-hero"><div><h1>Subscription Plans</h1><p>Design packages, set prices, choose dashboard features, then activate them for cafes to purchase.</p></div><div className="inline-actions"><button onClick={load}>Refresh</button><button className="action-button primary" disabled={loading} onClick={() => void save()}>Save all plans</button></div></div>
       {message ? <div className="action-notice good">{message}</div> : null}{error ? <div className="action-notice bad">{error}</div> : null}
+      <div className="action-notice">Create a base package and higher-priced packages with Extra Services or Tournaments enabled. The prices below are the total package prices, not automatic per-feature surcharges. Draft plans are hidden from cafes. Activate and save a plan to publish it.</div>
       <section className="e2e-card">
         <div className="mini-row"><h3>Create Plan</h3><button onClick={addPlan}>Add Draft</button></div>
         <div className="form-grid-compact four">
@@ -1637,10 +1646,10 @@ function PlanModelsPage() {
           <label>Yearly<input type="number" min="0" value={newPlan.yearly} onChange={(e) => setNewPlan((plan) => ({ ...plan, yearly: Number(e.target.value || 0) }))} /></label>
         </div>
         <label>Additional PC price / month (INR)<input type="number" min="0" step="0.01" value={newPlan.extra_pc_monthly} onChange={e=>setNewPlan(plan=>({...plan,extra_pc_monthly:Number(e.target.value)}))}/></label>
-        <fieldset><legend>Dashboard features included</legend>{['kiosk','pricing','cafe_wallet','passes','food','analytics','tournaments','staff'].map(feature=><label key={feature}><input type="checkbox" checked={newPlan.entitlements.includes(feature)} onChange={e=>setNewPlan(plan=>({...plan,entitlements:e.target.checked?[...plan.entitlements,feature]:plan.entitlements.filter(f=>f!==feature)}))}/>{feature.replaceAll('_',' ')}</label>)}</fieldset>
+        <fieldset><legend>Dashboard features included</legend>{['kiosk','pricing','cafe_wallet','passes','food','analytics','tournaments','staff'].map(feature=><label key={feature}><input type="checkbox" checked={newPlan.entitlements.includes(feature)} onChange={e=>setNewPlan(plan=>({...plan,entitlements:e.target.checked?[...plan.entitlements,feature]:plan.entitlements.filter(f=>f!==feature)}))}/>{PLAN_FEATURE_LABELS[feature] || feature}</label>)}</fieldset>
         <label>Feature descriptions<textarea value={newFeatures} onChange={(e) => setNewFeatures(e.target.value)} placeholder="One feature per line" /></label>
       </section>
-      <div className="plan-grid">{plans.map((plan) => <section className="e2e-card" key={plan.code}><div className="mini-row"><h3>{plan.name}</h3><b className={classNames('status-pill', plan.enabled ? 'good' : 'bad')}>{plan.enabled ? 'active' : 'inactive'}</b></div><div className="form-grid-compact two"><label>Name<input value={plan.name} onChange={(e) => update(plan.code, 'name', e.target.value)} /></label><label>Status<select value={plan.enabled ? 'active' : 'inactive'} onChange={(e) => update(plan.code, 'enabled', e.target.value === 'active')}><option value="active">Active</option><option value="inactive">Inactive</option></select></label></div><small>{plan.code}</small><div className="form-grid-compact four"><label>PCs<input type="number" min="0" value={plan.pc_limit} onChange={(e) => update(plan.code, 'pc_limit', e.target.value)} /></label><label>Monthly<input type="number" min="0" value={plan.monthly} onChange={(e) => update(plan.code, 'monthly', e.target.value)} /></label><label>Quarterly<input type="number" min="0" value={plan.quarterly} onChange={(e) => update(plan.code, 'quarterly', e.target.value)} /></label><label>Yearly<input type="number" min="0" value={plan.yearly} onChange={(e) => update(plan.code, 'yearly', e.target.value)} /></label></div><label>Additional PC price / month (INR)<input type="number" min="0" step="0.01" value={plan.extra_pc_monthly||0} onChange={e=>update(plan.code,'extra_pc_monthly',e.target.value)}/></label><fieldset><legend>Dashboard features included</legend>{['kiosk','pricing','cafe_wallet','passes','food','analytics','tournaments','staff'].map(feature=><label key={feature}><input type="checkbox" checked={(plan.entitlements||[]).includes(feature)} onChange={e=>setPlans(rows=>rows.map(p=>p.code===plan.code?{...p,entitlements:e.target.checked?[...(p.entitlements||[]),feature]:(p.entitlements||[]).filter(f=>f!==feature)}:p))}/>{feature.replaceAll('_',' ')}</label>)}</fieldset><label>Feature descriptions<textarea value={(plan.features || []).join('\n')} onChange={(e) => updateFeatures(plan.code, e.target.value)} /></label><div className="inline-actions"><button onClick={() => void save()}>Save</button><button className="danger" onClick={() => void removePlan(plan)}>Delete</button></div></section>)}</div>
+      <div className="plan-grid">{plans.map((plan) => <section className="e2e-card" key={plan.code}><div className="mini-row"><h3>{plan.name}</h3><b className={classNames('status-pill', plan.enabled ? 'good' : 'bad')}>{plan.enabled ? 'Active — available to cafes' : 'Draft / inactive'}</b></div><div className="form-grid-compact two"><label>Name<input value={plan.name} onChange={(e) => update(plan.code, 'name', e.target.value)} /></label><label>Status<select value={plan.enabled ? 'Active — available to cafes' : 'Draft / inactive'} onChange={(e) => update(plan.code, 'enabled', e.target.value === 'active')}><option value="inactive">Draft / inactive — hidden</option><option value="active">Active — available to cafes</option></select></label></div><small>{plan.code}</small><div className="form-grid-compact four"><label>PCs<input type="number" min="0" value={plan.pc_limit} onChange={(e) => update(plan.code, 'pc_limit', e.target.value)} /></label><label>Monthly<input type="number" min="0" value={plan.monthly} onChange={(e) => update(plan.code, 'monthly', e.target.value)} /></label><label>Quarterly<input type="number" min="0" value={plan.quarterly} onChange={(e) => update(plan.code, 'quarterly', e.target.value)} /></label><label>Yearly<input type="number" min="0" value={plan.yearly} onChange={(e) => update(plan.code, 'yearly', e.target.value)} /></label></div><label>Additional PC price / month (INR)<input type="number" min="0" step="0.01" value={plan.extra_pc_monthly||0} onChange={e=>update(plan.code,'extra_pc_monthly',e.target.value)}/></label><fieldset><legend>Dashboard features included</legend>{['kiosk','pricing','cafe_wallet','passes','food','analytics','tournaments','staff'].map(feature=><label key={feature}><input type="checkbox" checked={(plan.entitlements||[]).includes(feature)} onChange={e=>setPlans(rows=>rows.map(p=>p.code===plan.code?{...p,entitlements:e.target.checked?[...(p.entitlements||[]),feature]:(p.entitlements||[]).filter(f=>f!==feature)}:p))}/>{PLAN_FEATURE_LABELS[feature] || feature}</label>)}</fieldset><label>Feature descriptions<textarea value={(plan.features || []).join('\n')} onChange={(e) => updateFeatures(plan.code, e.target.value)} /></label><div className="inline-actions"><button onClick={() => void save()}>Save</button><button className="danger" onClick={() => void removePlan(plan)}>Delete</button></div></section>)}</div>
     </section>
   );
 }
@@ -1741,17 +1750,19 @@ function OperationalPage({ active, vendors }: { active: ModuleId; vendors: Vendo
 
 export default function HomePage() {
   const [active, setActive] = useState<ModuleId>('overview');
+  const [navigationReady, setNavigationReady] = useState(false);
   const [query, setQuery] = useState('');
   const { vendors, loading, error, usingFallback, reload, setVendors } = useAdminData();
 
   useEffect(() => {
     const moduleFromHash = window.location.hash.slice(1) as ModuleId;
     if (navItems.some((item) => item.id === moduleFromHash)) setActive(moduleFromHash);
+    setNavigationReady(true);
   }, []);
 
   useEffect(() => {
-    window.history.replaceState(null, '', `#${active}`);
-  }, [active]);
+    if (navigationReady) window.history.replaceState(null, '', `#${active}`);
+  }, [active, navigationReady]);
 
   const content = useMemo(() => {
     if (active === 'overview') return <OverviewPage vendors={vendors} setActive={setActive} />;
