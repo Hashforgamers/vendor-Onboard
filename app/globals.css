@@ -1598,11 +1598,12 @@ h1 {
   }
 }
 
-/* Fixed-height overview workspace for standard desktop screens. */
+/* Desktop shell uses document scrolling so long pages remain reachable. */
 @media (min-width: 901px) {
   .hq-shell {
-    height: 100dvh;
-    overflow: hidden;
+    min-height: 100dvh;
+    height: auto;
+    overflow: visible;
   }
 
   .hq-sidebar {
@@ -2956,7 +2957,7 @@ input::placeholder, textarea::placeholder { color: #98a2b3; }
 .subscription-toolbar label:first-child { flex: 1; min-width: 200px; }
 .subscription-toolbar input, .subscription-toolbar select, .subscription-editor input, .subscription-editor select { padding: 10px 12px; border: 1px solid var(--line-strong); border-radius: 8px; background: white; color: var(--text); min-width: 0; }
 .subscription-toolbar > span { padding: 10px 0; font-size: 12px; color: var(--muted); }
-.subscriptions-page .subscription-table .ops-head, .subscriptions-page .subscription-table .ops-row { grid-template-columns: minmax(160px, 2fr) minmax(120px, 1.3fr) minmax(100px, 1fr) minmax(100px, 1fr) 90px; }
+.subscriptions-page .subscription-table .ops-head, .subscriptions-page .subscription-table .ops-row { min-width: 0; grid-template-columns: minmax(0, 2fr) minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1fr) 80px; gap: 10px; padding: 10px 14px; }
 .subscriptions-page .ops-row > div, .subscriptions-page .ops-row > span { min-width: 0; overflow-wrap: anywhere; }
 .subscription-editor { grid-column: 1 / -1; padding: 20px; border: 1px solid var(--line); border-radius: 10px; background: #f8fafc; display: grid; gap: 14px; }
 .subscription-editor h3, .subscription-editor p { margin: 0; }
@@ -2976,4 +2977,20 @@ input::placeholder, textarea::placeholder { color: #98a2b3; }
   .subscriptions-page .subscription-table .ops-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
   .plan-list-item summary { padding-right: 0; }
   .plan-edit-hint { position: static; display: block; transform: none; margin-top: 12px; }
+}
+
+/* Fit subscription content to its column without a nested horizontal scroller. */
+.subscriptions-page { min-width: 0; }
+.subscriptions-page .subscription-table { overflow: visible; }
+.subscriptions-page .ops-row > button { min-width: 0; width: 100%; padding-inline: 8px; }
+.subscriptions-page .source-note { font-size: 11px; line-height: 1.4; }
+.subscription-toolbar label:first-child { min-width: 0; flex-basis: 220px; }
+.subscription-toolbar input, .subscription-toolbar select { max-width: 100%; width: 100%; }
+.subscription-editor input, .subscription-editor select { max-width: 100%; width: 100%; }
+@media (min-width: 901px) {
+  .hq-sidebar { overflow-y: auto; }
+}
+@media (max-width: 800px) {
+  .subscriptions-page .subscription-table .ops-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .subscriptions-page .ops-row > button { width: auto; justify-self: start; }
 }
