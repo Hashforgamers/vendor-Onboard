@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { authorizedAdmin } from "../../../lib/admin-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -9,6 +10,9 @@ const BACKEND_BASE = (
 ).replace(/\/$/, "");
 
 async function proxy(request: NextRequest, pathSegments: string[]): Promise<NextResponse> {
+  if (!await authorizedAdmin(request.headers.get("authorization"))) {
+    return NextResponse.json({error:"Hash team sign-in required"},{status:401});
+  }
   if (!pathSegments.length) {
     return NextResponse.json({ error: "Missing backend path" }, { status: 400 });
   }
@@ -17,6 +21,10 @@ async function proxy(request: NextRequest, pathSegments: string[]): Promise<Next
   const targetUrl = `${BACKEND_BASE}/api/${pathSegments.join("/")}${query}`;
 
   const method = request.method.toUpperCase();
+  const origin = request.headers.get("origin");
+  if (!["GET", "HEAD", "OPTIONS"].includes(method) && origin && origin !== new URL(request.url).origin) {
+    return NextResponse.json({error:"Cross-origin admin mutation denied"},{status:403});
+  }
   const headers = new Headers();
   headers.set("accept", "application/json");
 
@@ -26,7 +34,7 @@ async function proxy(request: NextRequest, pathSegments: string[]): Promise<Next
   }
 
   const authHeader = request.headers.get("authorization");
-  if (authHeader) {
+  if (authHeader?.startsWith("Bearer ")) {
     headers.set("authorization", authHeader);
   }
 

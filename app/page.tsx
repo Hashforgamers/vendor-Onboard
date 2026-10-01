@@ -160,6 +160,8 @@ type PlanModel = {
   yearly: number;
   features: string[];
   plan_features?: string[];
+  entitlements?: string[];
+  extra_pc_monthly?: number;
 };
 
 type Collaborator = {
@@ -376,6 +378,8 @@ function normalizePlanModel(plan: PlanModel): PlanModel {
     ...plan,
     enabled: Boolean(plan.enabled ?? plan.active),
     features: Array.isArray(plan.features) ? plan.features : (plan.plan_features || []),
+    entitlements: plan.entitlements ?? ['kiosk','pricing','cafe_wallet','passes','food','analytics','tournaments','staff'],
+    extra_pc_monthly: plan.extra_pc_monthly ?? 0,
   };
 }
 
@@ -1559,7 +1563,7 @@ function SubscriptionsPage() {
 }
 
 function PlanModelsPage() {
-  const emptyPlan = { code: '', name: '', enabled: true, pc_limit: 0, monthly: 0, quarterly: 0, yearly: 0, features: [] as string[] };
+  const emptyPlan = { code: '', name: '', enabled: true, pc_limit: 0, monthly: 0, quarterly: 0, yearly: 0, features: [] as string[], extra_pc_monthly: 0, entitlements: [] as string[] };
   const [plans, setPlans] = useState<PlanModel[]>([]);
   const [newPlan, setNewPlan] = useState(emptyPlan);
   const [newFeatures, setNewFeatures] = useState('');
@@ -1576,7 +1580,7 @@ function PlanModelsPage() {
 
   useEffect(() => { void load(); }, [load]);
 
-  const update = (code: string, key: keyof PlanModel, value: string | boolean) => setPlans((rows) => rows.map((plan) => plan.code === code ? { ...plan, [key]: typeof value === 'string' && ['pc_limit', 'monthly', 'quarterly', 'yearly'].includes(key) ? Number(value || 0) : value } : plan));
+  const update = (code: string, key: keyof PlanModel, value: string | boolean) => setPlans((rows) => rows.map((plan) => plan.code === code ? { ...plan, [key]: typeof value === 'string' && ['pc_limit', 'monthly', 'quarterly', 'yearly','extra_pc_monthly'].includes(key) ? Number(value || 0) : value } : plan));
   const updateFeatures = (code: string, value: string) => setPlans((rows) => rows.map((plan) => plan.code === code ? { ...plan, features: value.split('\n').map((item) => item.trim()).filter(Boolean) } : plan));
   const normalizePlanCode = (value: string) => value.toLowerCase().replace(/[^a-z0-9_]+/g, '_').replace(/^_+|_+$/g, '');
 
@@ -1632,9 +1636,11 @@ function PlanModelsPage() {
           <label>Quarterly<input type="number" min="0" value={newPlan.quarterly} onChange={(e) => setNewPlan((plan) => ({ ...plan, quarterly: Number(e.target.value || 0) }))} /></label>
           <label>Yearly<input type="number" min="0" value={newPlan.yearly} onChange={(e) => setNewPlan((plan) => ({ ...plan, yearly: Number(e.target.value || 0) }))} /></label>
         </div>
-        <label>Features<textarea value={newFeatures} onChange={(e) => setNewFeatures(e.target.value)} placeholder="One feature per line" /></label>
+        <label>Additional PC price / month (INR)<input type="number" min="0" step="0.01" value={newPlan.extra_pc_monthly} onChange={e=>setNewPlan(plan=>({...plan,extra_pc_monthly:Number(e.target.value)}))}/></label>
+        <fieldset><legend>Dashboard features included</legend>{['kiosk','pricing','cafe_wallet','passes','food','analytics','tournaments','staff'].map(feature=><label key={feature}><input type="checkbox" checked={newPlan.entitlements.includes(feature)} onChange={e=>setNewPlan(plan=>({...plan,entitlements:e.target.checked?[...plan.entitlements,feature]:plan.entitlements.filter(f=>f!==feature)}))}/>{feature.replaceAll('_',' ')}</label>)}</fieldset>
+        <label>Feature descriptions<textarea value={newFeatures} onChange={(e) => setNewFeatures(e.target.value)} placeholder="One feature per line" /></label>
       </section>
-      <div className="plan-grid">{plans.map((plan) => <section className="e2e-card" key={plan.code}><div className="mini-row"><h3>{plan.name}</h3><b className={classNames('status-pill', plan.enabled ? 'good' : 'bad')}>{plan.enabled ? 'active' : 'inactive'}</b></div><div className="form-grid-compact two"><label>Name<input value={plan.name} onChange={(e) => update(plan.code, 'name', e.target.value)} /></label><label>Status<select value={plan.enabled ? 'active' : 'inactive'} onChange={(e) => update(plan.code, 'enabled', e.target.value === 'active')}><option value="active">Active</option><option value="inactive">Inactive</option></select></label></div><small>{plan.code}</small><div className="form-grid-compact four"><label>PCs<input type="number" min="0" value={plan.pc_limit} onChange={(e) => update(plan.code, 'pc_limit', e.target.value)} /></label><label>Monthly<input type="number" min="0" value={plan.monthly} onChange={(e) => update(plan.code, 'monthly', e.target.value)} /></label><label>Quarterly<input type="number" min="0" value={plan.quarterly} onChange={(e) => update(plan.code, 'quarterly', e.target.value)} /></label><label>Yearly<input type="number" min="0" value={plan.yearly} onChange={(e) => update(plan.code, 'yearly', e.target.value)} /></label></div><label>Features<textarea value={(plan.features || []).join('\n')} onChange={(e) => updateFeatures(plan.code, e.target.value)} /></label><div className="inline-actions"><button onClick={() => void save()}>Save</button><button className="danger" onClick={() => void removePlan(plan)}>Delete</button></div></section>)}</div>
+      <div className="plan-grid">{plans.map((plan) => <section className="e2e-card" key={plan.code}><div className="mini-row"><h3>{plan.name}</h3><b className={classNames('status-pill', plan.enabled ? 'good' : 'bad')}>{plan.enabled ? 'active' : 'inactive'}</b></div><div className="form-grid-compact two"><label>Name<input value={plan.name} onChange={(e) => update(plan.code, 'name', e.target.value)} /></label><label>Status<select value={plan.enabled ? 'active' : 'inactive'} onChange={(e) => update(plan.code, 'enabled', e.target.value === 'active')}><option value="active">Active</option><option value="inactive">Inactive</option></select></label></div><small>{plan.code}</small><div className="form-grid-compact four"><label>PCs<input type="number" min="0" value={plan.pc_limit} onChange={(e) => update(plan.code, 'pc_limit', e.target.value)} /></label><label>Monthly<input type="number" min="0" value={plan.monthly} onChange={(e) => update(plan.code, 'monthly', e.target.value)} /></label><label>Quarterly<input type="number" min="0" value={plan.quarterly} onChange={(e) => update(plan.code, 'quarterly', e.target.value)} /></label><label>Yearly<input type="number" min="0" value={plan.yearly} onChange={(e) => update(plan.code, 'yearly', e.target.value)} /></label></div><label>Additional PC price / month (INR)<input type="number" min="0" step="0.01" value={plan.extra_pc_monthly||0} onChange={e=>update(plan.code,'extra_pc_monthly',e.target.value)}/></label><fieldset><legend>Dashboard features included</legend>{['kiosk','pricing','cafe_wallet','passes','food','analytics','tournaments','staff'].map(feature=><label key={feature}><input type="checkbox" checked={(plan.entitlements||[]).includes(feature)} onChange={e=>setPlans(rows=>rows.map(p=>p.code===plan.code?{...p,entitlements:e.target.checked?[...(p.entitlements||[]),feature]:(p.entitlements||[]).filter(f=>f!==feature)}:p))}/>{feature.replaceAll('_',' ')}</label>)}</fieldset><label>Feature descriptions<textarea value={(plan.features || []).join('\n')} onChange={(e) => updateFeatures(plan.code, e.target.value)} /></label><div className="inline-actions"><button onClick={() => void save()}>Save</button><button className="danger" onClick={() => void removePlan(plan)}>Delete</button></div></section>)}</div>
     </section>
   );
 }
