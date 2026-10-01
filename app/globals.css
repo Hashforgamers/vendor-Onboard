@@ -2994,3 +2994,22 @@ input::placeholder, textarea::placeholder { color: #98a2b3; }
   .subscriptions-page .subscription-table .ops-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
   .subscriptions-page .ops-row > button { width: auto; justify-self: start; }
 }
+
+/* Cafe review surfaces: compact, factual and responsive. */
+.cafe-stats { gap: 10px; }
+.cafe-stats .metric-card { min-height: 90px; padding: 14px; }
+.cafe-table .table-head, .cafe-table .cafe-row { min-width: 0; grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr) minmax(0, .8fr) minmax(0, 1fr) minmax(0, .8fr) 70px 40px; gap: 10px; padding: 12px; }
+.cafe-row > *, .cafe-name > div { min-width: 0; overflow-wrap: anywhere; }
+.approval-page .summary-cards { gap: 8px; }
+.approval-page .queue-card { padding: 12px; }
+.approval-page .review-panel { min-width: 0; }
+.approval-page .review-header { flex-wrap: wrap; gap: 12px; padding: 16px; }
+.approval-page .document-layout { padding: 16px; gap: 16px; }
+.approval-page .decision-bar { flex-wrap: wrap; gap: 8px; padding: 12px 16px; }
+.approval-page .action-notice.bad { color: #991b1b; background: #fef2f2; }
+@media (max-width: 1100px) {
+ .cafe-table .table-head { display: none; }
+ .cafe-table .cafe-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+ .approval-page .approval-layout, .approval-page .document-layout { grid-template-columns: minmax(0, 1fr); }
+ .approval-page .queue-list { max-height: 280px; }
+}

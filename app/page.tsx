@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Image from 'next/image';
 import {
   AlertTriangle,
@@ -427,8 +427,13 @@ function useAdminData() {
     setLoading(true);
     setError('');
     try {
-      const data = await apiRequest<{ vendors: VendorRow[] }>('admin/vendors?page=1&per_page=100');
-      const rows = data.vendors || [];
+      const rows: VendorRow[] = [];
+      for (let page = 1; ; page++) {
+        const data = await apiRequest<{ vendors: VendorRow[] }>(`admin/vendors?page=${page}&per_page=100`);
+        const batch = data.vendors || [];
+        rows.push(...batch);
+        if (batch.length < 100) break;
+      }
       setVendors(rows);
       setUsingFallback(false);
     } catch (e) {
@@ -975,7 +980,7 @@ function CafesPage({ vendors, query, setActive, reload }: {
   const filtered = vendors.filter((vendor) => {
     const q = `${query} ${filterQuery}`.trim().toLowerCase();
     const text = `${vendor.cafe_name} ${vendor.owner_name} ${vendor.email || ''} ${cityForVendor(vendor)} ${vendor.vendor_id}`.toLowerCase();
-    const matchesQuery = !q || text.includes(q);
+    const matchesQuery = q.split(/\s+/).every(term => text.includes(term));
     const packageName = vendor.subscription?.package?.name || vendor.subscription?.package?.code || '';
     const matchesPlan = plan === 'Any Plan' || packageName.toLowerCase() === plan.toLowerCase();
     const matchesRegion = region === 'All Regions' || `${vendor.address?.state || ''} ${vendor.address?.country || ''}`.toLowerCase().includes(region.toLowerCase());
@@ -1034,7 +1039,7 @@ function CafesPage({ vendors, query, setActive, reload }: {
           </label>
           <label>Plan:
             <select value={plan} onChange={(e) => setPlan(e.target.value)}>
-              <option>Any Plan</option><option value="early_onboard">Early Onboard</option><option>Base</option><option>Grow</option><option>Elite</option>
+              <option>Any Plan</option>{Array.from(new Set(vendors.map(v => v.subscription?.package?.name || v.subscription?.package?.code).filter(Boolean))).sort().map(name => <option key={name}>{name}</option>)}
             </select>
           </label>
           <button className="reset-button" onClick={() => { setRegion('All Regions'); setPlan('Any Plan'); setFilterQuery(''); }}>
@@ -1044,7 +1049,7 @@ function CafesPage({ vendors, query, setActive, reload }: {
 
         <div className="cafe-table">
           <div className="table-head">
-            <span>Cafe Name</span><span>Owner</span><span>City</span><span>Status</span><span>Revenue (MTD)</span><span>Machines</span><span>Actions</span>
+            <span>Cafe Name</span><span>Owner</span><span>City</span><span>Status</span><span>Subscription paid</span><span>Machines</span><span>Actions</span>
           </div>
           {filtered.map((vendor) => {
             const machines = machinesForVendor(vendor);
@@ -1060,7 +1065,7 @@ function CafesPage({ vendors, query, setActive, reload }: {
                 <strong>{vendor.owner_name}</strong>
                 <span>{cityForVendor(vendor)}</span>
                 <span className={classNames('status-pill', statusTone(vendor.status))}>{vendor.status.replaceAll('_', ' ')}</span>
-                <strong>{formatMoney(Number(vendor.subscription?.amount_paid || 0))}.00</strong>
+                <strong>{formatMoney(Number(vendor.subscription?.amount_paid || 0))}</strong>
                 <div className="machine-cell">
                   <strong>{machines.limit || 'Not set'}</strong>
                 </div>
@@ -1088,6 +1093,8 @@ function ApprovalPage({ vendors, query, setVendors }: {
   query: string;
   setVendors: React.Dispatch<React.SetStateAction<VendorRow[]>>;
 }) {
+  const detailRequest = useRef(0);
+  const [saving, setSaving] = useState(false);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [detail, setDetail] = useState<VendorDetail | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
@@ -1104,16 +1111,19 @@ function ApprovalPage({ vendors, query, setVendors }: {
   const activeVendor = filtered.find((vendor) => vendor.vendor_id === selectedId) || filtered[0];
 
   const loadDetail = useCallback(async (vendorId: number) => {
+    const requestId = ++detailRequest.current;
+    setDetail(null);
     setLoadingDetail(true);
     setError('');
     try {
       const data = await apiRequest<{ vendor: VendorDetail }>(`admin/vendors/${vendorId}`);
-      setDetail(data.vendor);
+      if (requestId === detailRequest.current) setDetail(data.vendor);
     } catch (e) {
+      if (requestId !== detailRequest.current) return;
       setDetail(null);
       setError(e instanceof Error ? e.message : 'Unable to load the owner-uploaded documents.');
     } finally {
-      setLoadingDetail(false);
+      if (requestId === detailRequest.current) setLoadingDetail(false);
     }
   }, []);
 
@@ -1128,9 +1138,10 @@ function ApprovalPage({ vendors, query, setVendors }: {
   }, [selectedId, loadDetail]);
 
   const updateVendor = async (nextStatus: string) => {
-    if (!activeVendor) return;
+    if (!activeVendor || saving || loadingDetail || detail?.vendor_id !== activeVendor.vendor_id) return;
     setNotice('');
     setError('');
+    setSaving(true);
     try {
       const docs = detail?.documents?.map((doc) => doc.id).filter(Boolean) || [];
       if (nextStatus === 'active' && !docs.length) {
@@ -1157,13 +1168,14 @@ function ApprovalPage({ vendors, query, setVendors }: {
       await loadDetail(activeVendor.vendor_id);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Backend action failed');
-    }
+    } finally { setSaving(false); }
   };
 
   const requestInformation = async () => {
-    if (!activeVendor) return;
+    if (!activeVendor || saving || loadingDetail || detail?.vendor_id !== activeVendor.vendor_id) return;
     setNotice('');
     setError('');
+    setSaving(true);
     try {
       await apiRequest(`admin/vendors/${activeVendor.vendor_id}/notifications/request-info`, {
         method: 'POST',
@@ -1173,10 +1185,11 @@ function ApprovalPage({ vendors, query, setVendors }: {
       setNotice('Information request email sent to the cafe owner.');
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Unable to send the information request.');
-    }
+    } finally { setSaving(false); }
   };
 
-  const docs = detail?.documents || [];
+  const docs = detail?.vendor_id === activeVendor?.vendor_id ? detail?.documents || [] : [];
+  const reviewDisabled = !activeVendor || saving || loadingDetail || detail?.vendor_id !== activeVendor?.vendor_id;
   const selectedDocument = docs.find((document) => documentCategory(document.document_type) === activeDocumentCategory);
   const documentUrl = getDocumentUrl(selectedDocument);
   const documentTabs = [
@@ -1209,22 +1222,22 @@ function ApprovalPage({ vendors, query, setVendors }: {
         <div className="queue-column">
           <div className="queue-head">
             <h2>Active Queue</h2>
-            <button className="icon-button"><SlidersHorizontal size={18} /></button>
+            <span>{filtered.length}</span>
           </div>
           <div className="queue-list" tabIndex={0} aria-label="Pending cafe applications">
             {filtered.map((vendor, index) => (
               <button
                 key={vendor.vendor_id}
                 className={classNames('queue-card', activeVendor?.vendor_id === vendor.vendor_id && 'active')}
-                onClick={() => setSelectedId(vendor.vendor_id)}
+                disabled={saving} onClick={() => { setDetail(null); setRequestInfoMessage(''); setSelectedId(vendor.vendor_id); }}
               >
                 <div className="queue-title">
-                  <div><strong>{vendor.cafe_name}</strong><span>{cityForVendor(vendor)}, {index % 2 ? 'CA' : 'Central'}</span></div>
-                  <em>{index === 0 ? 'Priority' : 'Standard'}</em>
+                  <div><strong>{vendor.cafe_name}</strong><span>{cityForVendor(vendor)}</span></div>
+                  <em>#{vendor.vendor_id}</em>
                 </div>
                 <div className="doc-lines">
                   <span>License Status <b className={classNames('doc-status', statusTone(vendor.status))}>{vendor.status === 'pending_verification' ? 'Pending' : 'Submitted'}</b></span>
-                  <span>GST/VAT <b className={classNames('doc-status', (vendor.documents?.pending || 0) > 1 ? 'bad' : 'good')}>{(vendor.documents?.pending || 0) > 1 ? 'Flagged' : 'Verified'}</b></span>
+                  <span>Documents <b>{vendor.documents?.verified || 0} / {vendor.documents?.total || 0} verified</b></span>
                 </div>
                 <span className="review-button">Review Application</span>
               </button>
@@ -1241,7 +1254,7 @@ function ApprovalPage({ vendors, query, setVendors }: {
               <p>{detail?.address?.addressLine1 || activeVendor?.address?.addressLine1 || 'Address not provided'}, {detail?.address?.country || activeVendor?.address?.country || (activeVendor ? cityForVendor(activeVendor) : 'Not provided')}</p>
             </div>
             <div className="review-header-actions">
-              <button disabled={!activeVendor} onClick={() => setShowProfile(true)}>View Profile</button>
+              <button disabled={reviewDisabled} onClick={() => setShowProfile(true)}>View Profile</button>
               <button disabled={!detail?.contact?.email && !detail?.account_email} onClick={() => {
                 const email = detail?.contact?.email || detail?.account_email;
                 if (email) window.location.href = `mailto:${email}`;
@@ -1282,9 +1295,9 @@ function ApprovalPage({ vendors, query, setVendors }: {
           </div>
 
           <div className="decision-bar">
-            <button className="reject" disabled={!activeVendor} onClick={() => { if (window.confirm('Reject this cafe application? The cafe will remain inactive.')) void updateVendor('rejected'); }}><X size={18} /> Reject</button>
-            <button className="info" onClick={() => void requestInformation()}><HelpCircle size={18} /> Request Info</button>
-            <button className="approve" disabled={!activeVendor || !docs.length} onClick={() => { if (window.confirm('Approve this cafe registration? This verifies all uploaded documents and activates the cafe.')) void updateVendor('active'); }}><Check size={19} /> Approve Registration</button>
+            <button className="reject" disabled={reviewDisabled} onClick={() => { if (window.confirm('Reject this cafe application? The cafe will remain inactive.')) void updateVendor('rejected'); }}><X size={18} /> Reject</button>
+            <button className="info" disabled={reviewDisabled || !requestInfoMessage.trim()} onClick={() => void requestInformation()}><HelpCircle size={18} /> Request Info</button>
+            <button className="approve" disabled={reviewDisabled || !docs.length} onClick={() => { if (window.confirm('Approve this cafe registration? This verifies all uploaded documents and activates the cafe.')) void updateVendor('active'); }}><Check size={19} /> Approve Registration</button>
           </div>
         </div>
       </div>
