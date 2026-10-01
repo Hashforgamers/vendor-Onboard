@@ -1469,6 +1469,10 @@ function GamesPage() {
 }
 
 function SubscriptionsPage() {
+  const [query, setQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [saving, setSaving] = useState(false);
   const [rows, setRows] = useState<SubscriptionRow[]>([]);
   const [plans, setPlans] = useState<PlanModel[]>([]);
   const [loading, setLoading] = useState(false);
@@ -1510,6 +1514,7 @@ function SubscriptionsPage() {
   const changePlan = async (vendorId: number, defaultPlan = false) => {
     setMessage('');
     setError('');
+    setSaving(true);
     try {
       if (defaultPlan) {
         await apiRequest(`admin/vendors/${vendorId}/subscriptions/provision-default`, { method: 'POST' });
@@ -1530,35 +1535,48 @@ function SubscriptionsPage() {
         });
       }
       setMessage(`Subscription updated for vendor #${vendorId}.`);
+      setEditingId(null);
       await load();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Subscription update failed.');
-    }
+    } finally { setSaving(false); }
   };
 
+  const visibleRows = rows.filter(row => {
+    const matchesQuery = `${row.cafe_name} ${row.owner_name || ''} ${row.vendor_id}`.toLowerCase().includes(query.toLowerCase());
+    return matchesQuery && (statusFilter === 'all' || (statusFilter === 'active' ? row.is_active : !row.is_active));
+  });
   return (
-    <section className="page-stack">
-      <div className="hero-row compact-hero"><div><h1>Subscriptions</h1><p>Current plan assignments and immediate provisioning controls.</p></div><button className="action-button secondary" onClick={load}><RefreshCcw size={16} /> Refresh</button></div>
+    <section className="page-stack subscriptions-page">
+      <div className="hero-row compact-hero"><div><h1>Cafe subscriptions</h1><p>Review cafe plans and manage access.</p></div><button className="action-button secondary" onClick={load}><RefreshCcw size={16} /> Refresh</button></div>
       {message ? <div className="action-notice good">{message}</div> : null}
       {error ? <div className="action-notice bad">{error}</div> : null}
+      <div className="subscription-toolbar">
+        <label>Find a cafe<input type="search" placeholder="Cafe, owner or cafe ID" value={query} onChange={e => setQuery(e.target.value)} /></label>
+        <label>Status<select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}><option value="all">All subscriptions</option><option value="active">Active</option><option value="inactive">Inactive</option></select></label>
+        <span>{visibleRows.length} of {rows.length} loaded subscriptions</span>
+      </div>
+      {loading && <p role="status">Loading subscriptions...</p>}
       <div className="ops-table subscription-table">
-        <div className="ops-head"><span>Cafe</span><span>Owner</span><span>Plan</span><span>Status</span><span>Period</span><span>Change</span><span>Action</span></div>
-        {rows.map((row) => {
+        <div className="ops-head"><span>Cafe</span><span>Plan</span><span>Status</span><span>Renews / ends</span><span>Action</span></div>
+        {visibleRows.map((row) => {
           const period = periodByVendor[row.vendor_id] || { start: todayIso(), end: addDaysIso(30), amount: '' };
           return (
           <div className="ops-row" key={row.id}>
-            <strong>#{row.vendor_id} · {row.cafe_name}</strong><span>{row.owner_name || '-'}</span><span>{row.package?.name || row.package?.code || '-'}{row.set_by_super_admin ? <small className="source-note">Super admin</small> : null}</span><span><b className={classNames('status-pill', row.is_active ? 'good' : statusTone(row.status))}>{row.is_active ? 'active now' : row.status}</b></span><span>{dateInputValue(row.period_start) || '-'} to {dateInputValue(row.period_end) || '-'}</span>
-            <select value={planByVendor[row.vendor_id] || ''} onChange={(e) => setPlanByVendor((prev) => ({ ...prev, [row.vendor_id]: e.target.value }))}><option value="">Choose plan</option>{plans.filter((plan) => plan.enabled).map((plan) => <option key={plan.code} value={plan.code}>{plan.name}</option>)}</select>
+            <div><strong>{row.cafe_name}</strong><small className="source-note">#{row.vendor_id} · {row.owner_name || 'No owner'}</small></div><span>{row.package?.name || row.package?.code || '-'}{row.set_by_super_admin ? <small className="source-note">Super admin</small> : null}</span><span><b className={classNames('status-pill', row.is_active ? 'good' : statusTone(row.status))}>{row.is_active ? 'active now' : row.status}</b></span><span>{dateInputValue(row.period_end) || '-'}</span>
+            <button aria-expanded={editingId === row.vendor_id} onClick={() => setEditingId(editingId === row.vendor_id ? null : row.vendor_id)}>Manage</button>
+            {editingId === row.vendor_id && <div className="subscription-editor"><h3>Manage {row.cafe_name}</h3><p>Assign a plan and its access period. This is an admin override.</p><label>Plan
+            <select value={planByVendor[row.vendor_id] || ''} onChange={(e) => setPlanByVendor((prev) => ({ ...prev, [row.vendor_id]: e.target.value }))}><option value="">Choose plan</option>{plans.filter((plan) => plan.enabled).map((plan) => <option key={plan.code} value={plan.code}>{plan.name}</option>)}</select></label>
             <div className="subscription-period-controls">
-              <input type="date" aria-label={`Plan start for ${row.cafe_name}`} value={period.start} onChange={(e) => setPeriodByVendor((prev) => ({ ...prev, [row.vendor_id]: { ...period, start: e.target.value } }))} />
-              <input type="date" aria-label={`Plan end for ${row.cafe_name}`} min={period.start || undefined} value={period.end} onChange={(e) => setPeriodByVendor((prev) => ({ ...prev, [row.vendor_id]: { ...period, end: e.target.value } }))} />
-              <input type="number" min="0" aria-label={`Plan amount for ${row.cafe_name}`} value={period.amount} placeholder="0" onChange={(e) => setPeriodByVendor((prev) => ({ ...prev, [row.vendor_id]: { ...period, amount: e.target.value } }))} />
-              <button disabled={loading || !period.start || !period.end} onClick={() => void changePlan(row.vendor_id)}>Apply</button>
-              <button disabled={loading} onClick={() => void changePlan(row.vendor_id, true)}>Default</button>
-            </div>
+              <label>Starts<input type="date" aria-label={`Plan start for ${row.cafe_name}`} value={period.start} onChange={(e) => setPeriodByVendor((prev) => ({ ...prev, [row.vendor_id]: { ...period, start: e.target.value } }))} /></label>
+              <label>Ends<input type="date" aria-label={`Plan end for ${row.cafe_name}`} min={period.start || undefined} value={period.end} onChange={(e) => setPeriodByVendor((prev) => ({ ...prev, [row.vendor_id]: { ...period, end: e.target.value } }))} /></label>
+              <label>Amount (INR)<input type="number" min="0" aria-label={`Plan amount for ${row.cafe_name}`} value={period.amount} placeholder="0" onChange={(e) => setPeriodByVendor((prev) => ({ ...prev, [row.vendor_id]: { ...period, amount: e.target.value } }))} /></label>
+              <button disabled={loading || saving || !planByVendor[row.vendor_id] || !period.start || !period.end} onClick={() => void changePlan(row.vendor_id)}>{saving ? 'Saving…' : 'Apply plan'}</button>
+              <button disabled={loading || saving} onClick={() => void changePlan(row.vendor_id, true)}>Restore default</button>
+            </div></div>}
           </div>
         );})}
-        {!rows.length && !loading ? <div className="empty-state">No subscription rows available.</div> : null}
+        {!visibleRows.length && !loading ? <div className="empty-state">{rows.length ? 'No cafes match your filters.' : 'No subscriptions available.'}</div> : null}
       </div>
     </section>
   );
@@ -1572,6 +1590,7 @@ const PLAN_FEATURE_LABELS: Record<string, string> = {
 
 function PlanModelsPage() {
   const emptyPlan = { code: '', name: '', enabled: false, pc_limit: 0, monthly: 0, quarterly: 0, yearly: 0, features: [] as string[], extra_pc_monthly: 0, entitlements: [] as string[] };
+  const [planTab, setPlanTab] = useState<'list' | 'create'>('list');
   const [plans, setPlans] = useState<PlanModel[]>([]);
   const [newPlan, setNewPlan] = useState(emptyPlan);
   const [newFeatures, setNewFeatures] = useState('');
@@ -1606,6 +1625,8 @@ function PlanModelsPage() {
     setPlans((rows) => [...rows, { ...newPlan, code, name: newPlan.name.trim(), features: newFeatures.split('\n').map((item) => item.trim()).filter(Boolean) }]);
     setNewPlan(emptyPlan);
     setNewFeatures('');
+    setPlanTab('list');
+    setMessage('Plan added to the list. Select Save all plans to save your changes.');
   };
 
   const save = async () => {
@@ -1631,11 +1652,16 @@ function PlanModelsPage() {
 
   return (
     <section className="page-stack plans-page">
-      <div className="hero-row compact-hero"><div><h1>Subscription Plans</h1><p>Design packages, set prices, choose dashboard features, then activate them for cafes to purchase.</p></div><div className="inline-actions"><button onClick={load}>Refresh</button><button className="action-button primary" disabled={loading} onClick={() => void save()}>Save all plans</button></div></div>
+      <div className="hero-row compact-hero"><div><h1>Subscription Plans</h1><p>Design packages, set prices, choose dashboard features, then activate them for cafes to purchase.</p></div><div className="inline-actions">{planTab === 'list' && <><button disabled={loading} onClick={load}>Refresh</button><button className="action-button primary" disabled={loading || !plans.length} onClick={() => void save()}>Save all plans</button></>}</div></div>
+      <nav className="tabs-row" aria-label="Subscription sections">
+        <button type="button" className={planTab === 'list' ? 'active' : ''} aria-pressed={planTab === 'list'} onClick={() => setPlanTab('list')}>Plan listing</button>
+        <button type="button" className={planTab === 'create' ? 'active' : ''} aria-pressed={planTab === 'create'} onClick={() => setPlanTab('create')}>Create plan</button>
+      </nav>
       {message ? <div className="action-notice good">{message}</div> : null}{error ? <div className="action-notice bad">{error}</div> : null}
+      {planTab === 'create' && <>
       <div className="action-notice">Create a base package and higher-priced packages with Extra Services or Tournaments enabled. The prices below are the total package prices, not automatic per-feature surcharges. Draft plans are hidden from cafes. Activate and save a plan to publish it.</div>
       <section className="e2e-card">
-        <div className="mini-row"><h3>Create Plan</h3><button onClick={addPlan}>Add Draft</button></div>
+        <div className="mini-row"><h3>Create Plan</h3><button onClick={addPlan}>Add to plan listing</button></div>
         <div className="form-grid-compact four">
           <label>Code<input value={newPlan.code} onChange={(e) => setNewPlan((plan) => ({ ...plan, code: normalizePlanCode(e.target.value) }))} placeholder="custom_plan" /></label>
           <label>Name<input value={newPlan.name} onChange={(e) => setNewPlan((plan) => ({ ...plan, name: e.target.value }))} placeholder="Custom Plan" /></label>
@@ -1649,7 +1675,11 @@ function PlanModelsPage() {
         <fieldset className="plan-features"><legend>Dashboard features included</legend>{['kiosk','pricing','cafe_wallet','passes','food','analytics','tournaments','staff'].map(feature=><label key={feature}><input type="checkbox" checked={newPlan.entitlements.includes(feature)} onChange={e=>setNewPlan(plan=>({...plan,entitlements:e.target.checked?[...plan.entitlements,feature]:plan.entitlements.filter(f=>f!==feature)}))}/>{PLAN_FEATURE_LABELS[feature] || feature}</label>)}</fieldset>
         <label>Feature descriptions<textarea value={newFeatures} onChange={(e) => setNewFeatures(e.target.value)} placeholder="One feature per line" /></label>
       </section>
-      <div className="plan-grid">{plans.map((plan) => <section className="e2e-card" key={plan.code}><div className="mini-row"><h3>{plan.name}</h3><b className={classNames('status-pill', plan.enabled ? 'good' : 'bad')}>{plan.enabled ? 'Active — available to cafes' : 'Draft / inactive'}</b></div><div className="form-grid-compact two"><label>Name<input value={plan.name} onChange={(e) => update(plan.code, 'name', e.target.value)} /></label><label>Status<select value={plan.enabled ? 'active' : 'inactive'} onChange={(e) => update(plan.code, 'enabled', e.target.value === 'active')}><option value="inactive">Draft / inactive — hidden</option><option value="active">Active — available to cafes</option></select></label></div><small>{plan.code}</small><div className="form-grid-compact four"><label>PCs<input type="number" min="0" value={plan.pc_limit} onChange={(e) => update(plan.code, 'pc_limit', e.target.value)} /></label><label>Monthly<input type="number" min="0" value={plan.monthly} onChange={(e) => update(plan.code, 'monthly', e.target.value)} /></label><label>Quarterly<input type="number" min="0" value={plan.quarterly} onChange={(e) => update(plan.code, 'quarterly', e.target.value)} /></label><label>Yearly<input type="number" min="0" value={plan.yearly} onChange={(e) => update(plan.code, 'yearly', e.target.value)} /></label></div><label>Additional PC price / month (INR)<input type="number" min="0" step="0.01" value={plan.extra_pc_monthly||0} onChange={e=>update(plan.code,'extra_pc_monthly',e.target.value)}/></label><fieldset className="plan-features"><legend>Dashboard features included</legend>{['kiosk','pricing','cafe_wallet','passes','food','analytics','tournaments','staff'].map(feature=><label key={feature}><input type="checkbox" checked={(plan.entitlements||[]).includes(feature)} onChange={e=>setPlans(rows=>rows.map(p=>p.code===plan.code?{...p,entitlements:e.target.checked?[...(p.entitlements||[]),feature]:(p.entitlements||[]).filter(f=>f!==feature)}:p))}/>{PLAN_FEATURE_LABELS[feature] || feature}</label>)}</fieldset><label>Feature descriptions<textarea value={(plan.features || []).join('\n')} onChange={(e) => updateFeatures(plan.code, e.target.value)} /></label><div className="inline-actions"><button onClick={() => void save()}>Save</button><button className="danger" onClick={() => void removePlan(plan)}>Delete</button></div></section>)}</div>
+      </>}
+      {planTab === 'list' && <>
+      {loading ? <p role="status">Loading plans...</p> : !error && !plans.length ? <section className="e2e-card"><p>No subscription plans yet.</p><button className="action-button primary" onClick={() => setPlanTab('create')}>Create your first plan</button></section> : null}
+      <div className="plan-grid">{plans.map((plan) => <details className="e2e-card plan-list-item" key={plan.code}><summary><div className="mini-row"><h3>{plan.name}</h3><b className={classNames('status-pill', plan.enabled ? 'good' : 'bad')}>{plan.enabled ? 'Active — available to cafes' : 'Draft / inactive'}</b></div><p className="plan-summary">{plan.pc_limit} PCs · {formatMoney(Number(plan.monthly || 0), '₹')} / month · {(plan.entitlements || []).length} features</p><span className="plan-edit-hint">View & edit plan</span></summary><div className="form-grid-compact two"><label>Name<input value={plan.name} onChange={(e) => update(plan.code, 'name', e.target.value)} /></label><label>Status<select value={plan.enabled ? 'active' : 'inactive'} onChange={(e) => update(plan.code, 'enabled', e.target.value === 'active')}><option value="inactive">Draft / inactive — hidden</option><option value="active">Active — available to cafes</option></select></label></div><small>{plan.code}</small><div className="form-grid-compact four"><label>PCs<input type="number" min="0" value={plan.pc_limit} onChange={(e) => update(plan.code, 'pc_limit', e.target.value)} /></label><label>Monthly<input type="number" min="0" value={plan.monthly} onChange={(e) => update(plan.code, 'monthly', e.target.value)} /></label><label>Quarterly<input type="number" min="0" value={plan.quarterly} onChange={(e) => update(plan.code, 'quarterly', e.target.value)} /></label><label>Yearly<input type="number" min="0" value={plan.yearly} onChange={(e) => update(plan.code, 'yearly', e.target.value)} /></label></div><label>Additional PC price / month (INR)<input type="number" min="0" step="0.01" value={plan.extra_pc_monthly||0} onChange={e=>update(plan.code,'extra_pc_monthly',e.target.value)}/></label><fieldset className="plan-features"><legend>Dashboard features included</legend>{['kiosk','pricing','cafe_wallet','passes','food','analytics','tournaments','staff'].map(feature=><label key={feature}><input type="checkbox" checked={(plan.entitlements||[]).includes(feature)} onChange={e=>setPlans(rows=>rows.map(p=>p.code===plan.code?{...p,entitlements:e.target.checked?[...(p.entitlements||[]),feature]:(p.entitlements||[]).filter(f=>f!==feature)}:p))}/>{PLAN_FEATURE_LABELS[feature] || feature}</label>)}</fieldset><label>Feature descriptions<textarea value={(plan.features || []).join('\n')} onChange={(e) => updateFeatures(plan.code, e.target.value)} /></label><div className="inline-actions"><button onClick={() => void save()}>Save</button><button className="danger" onClick={() => void removePlan(plan)}>Delete</button></div></details>)}</div>
+      </>}
     </section>
   );
 }
