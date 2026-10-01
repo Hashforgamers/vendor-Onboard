@@ -965,6 +965,13 @@ function OverviewPage({ vendors, setActive }: { vendors: VendorRow[]; setActive:
   );
 }
 
+function SupportIssues() {
+  const [issues,setIssues]=useState<{id:number;cafe_name:string;message:string;status:string}[]>([]);
+  const [error,setError]=useState('');
+  const load=async()=>{setError('');try{const result=await apiRequest<{issues:typeof issues}>('admin/support-issues');setIssues(result.issues);}catch(e){setError(e instanceof Error?e.message:'Unable to load issues');}};
+  return <details className="e2e-card" onToggle={e=>{if(e.currentTarget.open)void load();}}><summary>Cafe support issues</summary>{error&&<p role="alert">{error}</p>}{issues.map(issue=><article key={issue.id} className="e2e-card"><strong>#{issue.id} · {issue.cafe_name} · {issue.status}</strong><p>{issue.message}</p></article>)}{!error&&!issues.length&&<p>No issues loaded.</p>}</details>;
+}
+
 function CafesPage({ vendors, query, setActive, reload }: {
   vendors: VendorRow[];
   query: string;
@@ -1029,6 +1036,7 @@ function CafesPage({ vendors, query, setActive, reload }: {
         <MetricCard icon={Zap} label="Verified Documents" value={String(verifiedDocuments)} />
       </div>
 
+      <SupportIssues />
       <div className="registry-panel">
         <div className="filters-row">
           <div className="inline-search"><Search size={16} /><input value={filterQuery} onChange={(event) => setFilterQuery(event.target.value)} placeholder="Filter by name..." /></div>
@@ -1295,6 +1303,7 @@ function ApprovalPage({ vendors, query, setVendors }: {
           </div>
 
           <div className="decision-bar">
+            <button disabled={reviewDisabled || !selectedDocument || requestInfoMessage.trim().length < 5} onClick={async()=>{if(!activeVendor||!selectedDocument)return;setSaving(true);setError('');try{const result=await apiRequest<{message:string}>(`admin/vendors/${activeVendor.vendor_id}/documents/${selectedDocument.id}/request-reupload`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({reason:requestInfoMessage})});setNotice(result.message);await loadDetail(activeVendor.vendor_id);}catch(e){setError(e instanceof Error?e.message:'Request failed');}finally{setSaving(false);}}}>Request document re-upload</button>
             <button className="reject" disabled={reviewDisabled} onClick={() => { if (window.confirm('Reject this cafe application? The cafe will remain inactive.')) void updateVendor('rejected'); }}><X size={18} /> Reject</button>
             <button className="info" disabled={reviewDisabled || !requestInfoMessage.trim()} onClick={() => void requestInformation()}><HelpCircle size={18} /> Request Info</button>
             <button className="approve" disabled={reviewDisabled || !docs.length} onClick={() => { if (window.confirm('Approve this cafe registration? This verifies all uploaded documents and activates the cafe.')) void updateVendor('active'); }}><Check size={19} /> Approve Registration</button>
