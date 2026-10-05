@@ -44,7 +44,9 @@ type ModuleId =
   | 'plans'
   | 'partners'
   | 'products'
-  | 'newsletter';
+  | 'newsletter'
+  | 'kiosk'
+  | 'notification-context';
 
 type VendorRow = {
   vendor_id: number;
@@ -218,6 +220,8 @@ const navItems: Array<{ id: ModuleId; label: string; icon: React.ComponentType<{
   { id: 'partners', label: 'Partners', icon: Handshake },
   { id: 'products', label: 'Catalog', icon: Package },
   { id: 'newsletter', label: 'Newsletter', icon: Mail },
+  { id: 'kiosk', label: 'Kiosk releases', icon: Monitor },
+  { id: 'notification-context', label: 'Push notifications', icon: Mail },
 ];
 
 const fallbackVendors: VendorRow[] = [
@@ -1827,6 +1831,8 @@ export default function HomePage() {
     if (active === 'plans') return <PlanModelsPage />;
     if (active === 'partners') return <PartnersPage />;
     if (active === 'products') return <ProductsPage />;
+    if (active === 'notification-context') return <NotificationContextPage />;
+    if (active === 'kiosk') return <KioskReleasesPage />;
     if (active === 'newsletter') return <NewsletterPage vendors={vendors} />;
     return <OperationalPage active={active} vendors={vendors} />;
   }, [active, vendors, query, setVendors, reload]);
@@ -1846,4 +1852,57 @@ export default function HomePage() {
       </main>
     </div>
   );
+}
+
+
+type KioskRelease = {id:number; version:string; source_url:string; download_url:string; notes:string; active:boolean};
+function KioskReleasesPage() {
+  const [rows,setRows]=useState<KioskRelease[]>([]);
+  const [form,setForm]=useState({version:'',source_url:'',download_url:'',notes:''});
+  const [error,setError]=useState(''); const [message,setMessage]=useState(''); const [busy,setBusy]=useState(false);
+  const load=useCallback(async()=>{const result=await apiRequest<{data:KioskRelease[]}>('admin/kiosk-releases');setRows(result.data);},[]);
+  useEffect(()=>{void load().catch(e=>setError(e.message));},[load]);
+  async function run(id?:number){setBusy(true);setError('');setMessage('');try{
+    await apiRequest(id ? `admin/kiosk-releases/${id}/activate` : 'admin/kiosk-releases',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(id?{}:form)});
+    await load();setMessage(id?'Active download updated for cafes.':'Draft saved. Activate it when the download is ready.');
+    if(!id)setForm({version:'',source_url:'',download_url:'',notes:''});
+  }catch(e){setError(e instanceof Error?e.message:'Release update failed.');}finally{setBusy(false);}}
+  return <section className="page-stack"><div className="hero-row compact-hero"><div><h1>Kiosk releases</h1><p>Manage the Windows kiosk download offered to gaming cafes.</p></div></div>
+    {error&&<div role="alert" className="action-notice bad">{error}</div>}{message&&<div role="status" className="action-notice good">{message}</div>}
+    <form className="e2e-card" onSubmit={e=>{e.preventDefault();void run();}}><h2>Add or edit a draft</h2><div className="form-grid-compact two">
+    <label>Version<input required maxLength={80} value={form.version} onChange={e=>setForm({...form,version:e.target.value})} placeholder="1.2.0" /></label>
+    <label>GitHub build or source link<input required type="url" value={form.source_url} onChange={e=>setForm({...form,source_url:e.target.value})} placeholder="https://github.com/owner/repo/actions/runs/..." /></label>
+    <label>GitHub Release download<input type="url" value={form.download_url} onChange={e=>setForm({...form,download_url:e.target.value})} placeholder="https://github.com/owner/repo/releases/download/v1.2.0/HashDash.exe" /></label>
+    <label>Release notes<textarea maxLength={10000} value={form.notes} onChange={e=>setForm({...form,notes:e.target.value})} /></label></div>
+    <p>Actions links are build references. To activate a version, add a Release asset link ending in .exe, .msi or .zip. Cafes must be able to download it without a team GitHub login.</p>
+    <button className="action-button primary" disabled={busy} type="submit">{busy?'Saving…':'Save draft'}</button></form>
+    <section className="e2e-card"><h2>Version history</h2>{rows.length===0&&!error&&<p>No releases saved.</p>}{rows.map(row=><article key={row.id} className="hero-row compact-hero"><div><h3>{row.version} {row.active?'· Active':'· Inactive'}</h3><p style={{whiteSpace:'pre-wrap'}}>{row.notes}</p><a href={row.source_url} target="_blank" rel="noopener noreferrer">Build reference</a>{row.download_url&&<> · <a href={row.download_url} target="_blank" rel="noopener noreferrer">Download</a></>}</div><div className="inline-actions">{!row.active&&<><button disabled={busy} onClick={()=>setForm({version:row.version,source_url:row.source_url,download_url:row.download_url,notes:row.notes})}>Edit draft</button><button disabled={busy||!row.download_url} onClick={()=>void run(row.id)}>Make active</button></>}</div></article>)}</section>
+  </section>;
+}
+
+
+type NotificationContext = {context:string;enabled:boolean;fallback_title:string;fallback_message:string;updated_at?:string};
+function NotificationContextPage(){
+ const [form,setForm]=useState<NotificationContext|null>(null);const [busy,setBusy]=useState(false);
+ const [error,setError]=useState('');const [message,setMessage]=useState('');
+ const [preview,setPreview]=useState<{title:string;message:string;source:string}|null>(null);
+ const load=useCallback(async()=>{const result=await apiRequest<{data:NotificationContext}>('admin/notification-context');setForm(result.data);},[]);
+ useEffect(()=>{void load().catch(e=>setError(e.message));},[load]);
+ async function action(previewOnly:boolean){if(!form)return;setBusy(true);setError('');setMessage('');setPreview(null);try{
+  if(previewOnly){const result=await apiRequest<{data:{title:string;message:string;source:string}}>('admin/notification-context/preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(form)});setPreview(result.data);}
+  else{const result=await apiRequest<{data:NotificationContext}>('admin/notification-context',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(form)});setForm(result.data);setMessage('Saved. The next cron run will use this context.');}
+ }catch(e){setError(e instanceof Error?e.message:'Unable to update notification context.');}finally{setBusy(false);}}
+ return <section className="page-stack"><div className="hero-row compact-hero"><div><h1>Push notifications</h1><p>Set the context used by AI for the scheduled gamer notifications.</p></div></div>
+ {error&&<div role="alert" className="action-notice bad">{error}</div>}{message&&<div role="status" className="action-notice good">{message}</div>}
+ {!form?<section className="e2e-card"><p>{error?'Settings could not be loaded.':'Loading notification settings…'}</p>{error&&<button onClick={()=>void load().catch(e=>setError(e.message))}>Retry</button>}</section>:
+ <form className="e2e-card" onSubmit={e=>{e.preventDefault();void action(false);}}>
+ <h2>Campaign context</h2><label><input type="checkbox" checked={form.enabled} disabled={busy} onChange={e=>setForm({...form,enabled:e.target.checked})}/> Enable scheduled notifications</label>
+ <label>Context<textarea disabled={busy} required rows={9} maxLength={6000} value={form.context} onChange={e=>{setForm({...form,context:e.target.value});setPreview(null);}} placeholder="Describe what to promote, audience, tone, language, call to action, and verified offers. Example: Encourage gamers to plan a cafe session with their squad. Do not mention discounts or seat availability." /></label>
+ <p>{form.context.length}/6,000 characters. Include only confirmed prices, offers and dates.</p>
+ <h3>Fallback message</h3><p>Used when AI generation is unavailable.</p><div className="form-grid-compact two"><label>Title<input disabled={busy} required maxLength={80} value={form.fallback_title} onChange={e=>(setPreview(null),setForm({...form,fallback_title:e.target.value}))}/></label><label>Message<textarea disabled={busy} required maxLength={200} value={form.fallback_message} onChange={e=>(setPreview(null),setForm({...form,fallback_message:e.target.value}))}/></label></div>
+ <div className="inline-actions"><button type="button" disabled={busy||!form.context.trim()} onClick={()=>void action(true)}>Generate preview</button><button type="submit" className="action-button primary" disabled={busy}>{busy?'Working…':'Save settings'}</button></div>
+ <p>Preview uses the text in this form and sends no FCM messages. Saving changes the next cron run; the existing cron schedule and 06:00–22:00 IST window remain in place. Pausing stops new and queued runs; a dispatch already sending may finish.</p>
+ {form.updated_at&&<small>Last saved: {new Date(form.updated_at).toLocaleString()}</small>}
+ {preview&&<section className="action-notice good"><strong>{preview.source==='fallback'?'Fallback preview · AI unavailable':'AI preview'}</strong><h3>{preview.title}</h3><p>{preview.message}</p><small>This preview has not been sent.</small></section>}
+ </form>}</section>;
 }
