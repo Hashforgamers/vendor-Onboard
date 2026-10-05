@@ -3013,3 +3013,28 @@ input::placeholder, textarea::placeholder { color: #98a2b3; }
  .approval-page .approval-layout, .approval-page .document-layout { grid-template-columns: minmax(0, 1fr); }
  .approval-page .queue-list { max-height: 280px; }
 }
+
+.e2e-card > label.campaign-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 16px 0;
+}
+.e2e-card > label.campaign-toggle input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  min-height: 18px;
+  padding: 0;
+  flex: 0 0 18px;
+  accent-color: var(--accent);
+}
+.form-grid-compact .campaign-fallback-message textarea {
+  width: 100%;
+  min-height: 76px;
+  padding: 9px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--text);
+  resize: vertical;
+}
