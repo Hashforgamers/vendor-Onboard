@@ -146,6 +146,10 @@ type GameRow = {
   title?: string;
   platform?: string;
   cover_image_url?: string;
+  image_url?: string;
+  average_rating?: number;
+  rawg_rating?: number;
+  console_catalog?: { id: number; display_name: string };
   released?: string;
   rating?: number;
   vendors_count?: number;
@@ -1411,87 +1415,128 @@ function PaymentsPage({ vendors }: { vendors: VendorRow[] }) {
   );
 }
 
+type CatalogPlatform = { id: number; slug: string; display_name: string; game_count: number };
+const emptyGame = { name: '', genre: '', release_date: '', description: '', cover_image_url: '', console_catalog_ids: [] as number[] };
+const gtaCover = 'https://www.rockstargames.com/VI/_next/static/media/meta.0t8ty~nlmxq2s.jpg?yvw8ZozOI7a7Kz1war9qe';
+
+function GameArtwork({ url, name }: { url?: string; name: string }) {
+  const [failed, setFailed] = useState(false);
+  useEffect(() => setFailed(false), [url]);
+  return <div className="game-artwork">
+    {url && !failed ? <img src={url} alt={`${name} cover artwork`} loading="lazy" onError={() => setFailed(true)} /> :
+      <div className="game-artwork-fallback"><Gamepad2 size={36} /><strong>{name || 'Cover preview'}</strong><small>{url ? 'Image unavailable' : 'No cover uploaded'}</small></div>}
+  </div>;
+}
+
 function GamesPage() {
   const [games, setGames] = useState<GameRow[]>([]);
-  const [platforms, setPlatforms] = useState<Array<{ slug?: string; name?: string; count?: number }>>([]);
+  const [platforms, setPlatforms] = useState<CatalogPlatform[]>([]);
   const [query, setQuery] = useState('');
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [showAdd, setShowAdd] = useState(false);
-  const [newGame, setNewGame] = useState({ name: '', genre: '', developer: '', release_date: '', description: '' });
+  const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [newGame, setNewGame] = useState({ ...emptyGame });
+  const [cursor, setCursor] = useState<string | null>(null);
+  const [revision, setRevision] = useState(0);
 
-  const load = useCallback(async () => {
+  useEffect(() => {
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      setLoading(true);
+      setError('');
+      try {
+        const [catalog, platformData] = await Promise.all([
+          apiRequest<{ games: GameRow[]; next_cursor: string | null }>(`games/search?limit=24&q=${encodeURIComponent(query.trim())}`),
+          apiRequest<{ platforms: CatalogPlatform[] }>('games/platforms?include_empty=true'),
+        ]);
+        if (!cancelled) {
+          setGames(catalog.games || []);
+          setCursor(catalog.next_cursor);
+          setPlatforms(platformData.platforms || []);
+        }
+      } catch (e) {
+        if (!cancelled) setError(e instanceof Error ? e.message : 'Unable to load games.');
+      } finally { if (!cancelled) setLoading(false); }
+    }, 250);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [query, revision]);
+
+  const uploadCover = async (file?: File) => {
+    if (!file) return;
     setError('');
-    try {
-      const [popular, platformData] = await Promise.all([
-        apiRequest<{ results?: GameRow[]; games?: GameRow[] }>('games/popular?limit=24'),
-        apiRequest<{ platforms?: Array<{ slug?: string; name?: string; count?: number }> }>('games/platforms?include_empty=true'),
-      ]);
-      setGames(popular.results || popular.games || []);
-      setPlatforms(platformData.platforms || []);
-    } catch (e) {
-      setGames([]);
-      setPlatforms([]);
-      setError(e instanceof Error ? e.message : 'Unable to load the game catalog.');
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 5 * 1024 * 1024) {
+      setError('Choose a JPG, PNG, or WebP image under 5 MB.'); return;
     }
-  }, []);
-
-  useEffect(() => { void load(); }, [load]);
-
-  const recordDiscovery = async (game: GameRow) => {
-    await apiRequest('games/discovery-events', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ game_id: game.id || game.game_id, game_name: game.name || game.title, source: 'super_admin_dashboard' }),
-    }).catch(() => undefined);
-    setMessage(`${game.name || game.title} discovery event recorded.`);
+    setUploading(true);
+    try {
+      const body = new FormData();
+      body.append('cover_image', file);
+      body.append('json', JSON.stringify({ name: newGame.name || 'game-cover' }));
+      const result = await apiRequest<{ image_data: { cover_image_url: string } }>('games/add-image', { method: 'POST', body });
+      if (!result.image_data?.cover_image_url) throw new Error('Upload did not return an image. Please try again.');
+      setNewGame((value) => ({ ...value, cover_image_url: result.image_data.cover_image_url }));
+    } catch (e) { setError(e instanceof Error ? e.message : 'Cover upload failed.'); }
+    finally { setUploading(false); }
   };
 
-  const createGame = async () => {
-    setError('');
-    setMessage('');
+  const createGame = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (saving || uploading) return;
+    setError(''); setMessage('');
+    if (!newGame.console_catalog_ids.length) { setError('Select at least one platform.'); return; }
+    setSaving(true);
     try {
-      if (!newGame.name.trim()) throw new Error('Game name is required.');
-      const response = await apiRequest<{ game?: GameRow; message?: string }>('games', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newGame),
+      const response = await apiRequest<{ game: GameRow }>('games', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...newGame, name: newGame.name.trim() }),
       });
-      setGames((rows) => [response.game || { ...newGame, id: Date.now() }, ...rows]);
-      setNewGame({ name: '', genre: '', developer: '', release_date: '', description: '' });
-      setShowAdd(false);
-      setMessage(response.message || 'Game added to the catalog.');
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Unable to add the game.');
-    }
+      if (!response.game?.id) throw new Error('The server did not confirm a saved game.');
+      setNewGame({ ...emptyGame }); setShowAdd(false);
+      setQuery(response.game.name || newGame.name);
+      setRevision((value) => value + 1);
+      setMessage(`${response.game.name} added to the catalog.`);
+    } catch (e) { setError(e instanceof Error ? e.message : 'Unable to add the game.'); }
+    finally { setSaving(false); }
   };
 
-  const filtered = games.filter((game) => !query || `${game.name || game.title || ''} ${game.platform || ''}`.toLowerCase().includes(query.toLowerCase()));
+  const loadMore = async () => {
+    setLoading(true);
+    try {
+      const result = await apiRequest<{ games: GameRow[]; next_cursor: string | null }>(`games/search?limit=24&q=${encodeURIComponent(query.trim())}&cursor=${encodeURIComponent(cursor || '')}`);
+      setGames((value) => [...value, ...result.games]); setCursor(result.next_cursor);
+    } catch (e) { setError(e instanceof Error ? e.message : 'Unable to load more games.'); }
+    finally { setLoading(false); }
+  };
 
-  return (
-    <section className="page-stack">
-      <div className="hero-row compact-hero">
-        <div><h1>Games</h1></div>
-        <div className="inline-actions"><input placeholder="Search games" value={query} onChange={(e) => setQuery(e.target.value)} /><button onClick={load}>Refresh</button><button className="action-button primary" onClick={() => setShowAdd((value) => !value)}><Plus size={16} /> Add Game</button></div>
-      </div>
-      {message ? <div className="action-notice good">{message}</div> : null}
-      {error ? <div className="action-notice bad">{error}</div> : null}
-      {showAdd ? <section className="e2e-card game-create-form"><div className="form-grid-compact four"><label>Name<input value={newGame.name} onChange={(e) => setNewGame({ ...newGame, name: e.target.value })} /></label><label>Genre<input value={newGame.genre} onChange={(e) => setNewGame({ ...newGame, genre: e.target.value })} /></label><label>Developer<input value={newGame.developer} onChange={(e) => setNewGame({ ...newGame, developer: e.target.value })} /></label><label>Release Date<input type="date" value={newGame.release_date} onChange={(e) => setNewGame({ ...newGame, release_date: e.target.value })} /></label></div><label>Description<textarea value={newGame.description} onChange={(e) => setNewGame({ ...newGame, description: e.target.value })} /></label><div className="inline-actions"><button className="action-button primary" onClick={() => void createGame()}>Add to Catalog</button><button onClick={() => setShowAdd(false)}>Cancel</button></div></section> : null}
-      <div className="ops-summary-strip">
-        {platforms.slice(0, 5).map((platform) => (
-          <div key={platform.slug || platform.name}><strong>{platform.name || platform.slug}</strong><span>{platform.count || 0} catalog rows</span></div>
-        ))}
-      </div>
-      <div className="game-grid">
-        {filtered.map((game) => (
-          <button className="game-card" key={game.id || game.game_id || game.name} onClick={() => recordDiscovery(game)}>
-            <span><Gamepad2 size={24} /></span>
-            <strong>{game.name || game.title}</strong>
-            <small>{game.platform || 'multi-platform'} · rating {game.rating || 'n/a'} · cafes {game.vendors_count || 0}</small>
-          </button>
-        ))}
-      </div>
-      {!filtered.length && !error ? <div className="empty-state">No games are available in the live catalog.</div> : null}
-    </section>
-  );
+  return <section className="page-stack games-page">
+    <div className="hero-row compact-hero">
+      <div><h1>Games</h1><p>Manage game artwork and availability across your catalog.</p></div>
+      <div className="inline-actions"><input aria-label="Search games" placeholder="Search the full catalog" value={query} disabled={loading} onChange={(e) => setQuery(e.target.value)} /><button disabled={loading} onClick={() => setRevision((value) => value + 1)}>Refresh</button><button className="action-button primary" disabled={saving || uploading} onClick={() => setShowAdd((value) => !value)}><Plus size={16} /> Add Game</button></div>
+    </div>
+    {message ? <div role="status" className="action-notice good">{message}</div> : null}
+    {error ? <div role="alert" className="action-notice bad">{error}</div> : null}
+    {showAdd ? <form className="e2e-card game-create-form" onSubmit={createGame}>
+      <div className="hero-row"><div><h2>Add a game</h2><p>Add artwork, choose platforms, and save to the catalog.</p></div><button type="button" disabled={saving || uploading} onClick={() => setNewGame({ ...emptyGame, name: 'Grand Theft Auto VI', genre: 'Action-adventure', cover_image_url: gtaCover, console_catalog_ids: platforms.filter((p) => ['playstation', 'xbox'].includes(p.slug)).map((p) => p.id) })}>Use GTA 6 template</button></div>
+      <fieldset disabled={saving || uploading} className="game-editor">
+        <div className="game-cover-editor"><GameArtwork url={newGame.cover_image_url} name={newGame.name} /><label>Upload cover<input type="file" accept="image/jpeg,image/png,image/webp" onChange={(e) => void uploadCover(e.target.files?.[0])} /></label><small>JPG, PNG or WebP · up to 5 MB. Landscape artwork works best.</small><label>Or paste an image URL<input type="url" maxLength={500} placeholder="https://…" value={newGame.cover_image_url} onChange={(e) => setNewGame({ ...newGame, cover_image_url: e.target.value })} /></label></div>
+        <div className="game-details-editor"><div className="form-grid-compact"><label>Game name *<input required maxLength={255} placeholder="e.g. Grand Theft Auto VI" value={newGame.name} onChange={(e) => setNewGame({ ...newGame, name: e.target.value })} /></label><label>Genre<input maxLength={100} placeholder="e.g. Action-adventure" value={newGame.genre} onChange={(e) => setNewGame({ ...newGame, genre: e.target.value })} /></label><label>Release date (optional)<input type="date" value={newGame.release_date} onChange={(e) => setNewGame({ ...newGame, release_date: e.target.value })} /></label></div>
+        <label>Description (optional)<textarea rows={3} value={newGame.description} onChange={(e) => setNewGame({ ...newGame, description: e.target.value })} /></label>
+        <fieldset className="game-platform-options"><legend>Platforms *</legend>{platforms.map((platform) => <label key={platform.id}><input type="checkbox" checked={newGame.console_catalog_ids.includes(platform.id)} onChange={(e) => setNewGame({ ...newGame, console_catalog_ids: e.target.checked ? [...newGame.console_catalog_ids, platform.id] : newGame.console_catalog_ids.filter((id) => id !== platform.id) })} />{platform.display_name}</label>)}{!platforms.length ? <p>No platforms loaded. Refresh the catalog to try again.</p> : null}</fieldset>
+        </div>
+      </fieldset>
+      <div className="inline-actions"><button className="action-button primary" type="submit" disabled={saving || uploading || !newGame.name.trim() || !newGame.console_catalog_ids.length}>{uploading ? 'Uploading cover…' : saving ? 'Saving…' : 'Add to Catalog'}</button><button type="button" disabled={saving || uploading} onClick={() => setShowAdd(false)}>Cancel</button></div>
+    </form> : null}
+    <div className="ops-summary-strip">{platforms.slice(0, 5).map((platform) => <div key={platform.id}><strong>{platform.display_name}</strong><span>{platform.game_count || 0} games</span></div>)}</div>
+    <div className="game-grid">{games.map((game, index) => <article className="game-card catalog-game-card" key={`${game.id}-${game.console_catalog?.id || index}`}>
+      <GameArtwork url={game.image_url || game.cover_image_url} name={game.name || game.title || 'Game'} />
+      <div className="game-card-details"><small className="game-platform-label">{game.console_catalog?.display_name || game.platform || 'Multi-platform'}</small><strong>{game.name || game.title}</strong><small>{game.average_rating || game.rawg_rating || game.rating ? `★ ${game.average_rating || game.rawg_rating || game.rating} / 5` : 'Not yet rated'}</small></div>
+    </article>)}</div>
+    {loading ? <p role="status">Loading games…</p> : cursor ? <button onClick={() => void loadMore()}>Load more games</button> : null}
+    {!games.length && !error && !loading ? <div className="empty-state">{query ? 'No games match your search. Add a game to grow the catalog.' : 'Your catalog is empty. Add your first game above.'}</div> : null}
+  </section>;
 }
 
 function SubscriptionsPage() {
