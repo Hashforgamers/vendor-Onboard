@@ -19,8 +19,8 @@ async function proxy(request: NextRequest, pathSegments: string[]): Promise<Next
 
   const query = new URL(request.url).search || "";
   const isWhatsApp = pathSegments[0] === "admin" && pathSegments[1] === "whatsapp";
-  const backend = isWhatsApp ? (process.env.BOOKING_BACKEND_URL || "").replace(/\/$/, "") : BACKEND_BASE;
-  if (!backend) return NextResponse.json({error:"Booking backend is not configured"},{status:503});
+  const backend = isWhatsApp ? (process.env.BOOKING_BACKEND_URL || process.env.NEXT_PUBLIC_BOOKING_URL || "").replace(/\/$/, "") : BACKEND_BASE;
+  if (!backend) return NextResponse.json({error:"Setup needed: set BOOKING_BACKEND_URL in the super-admin deployment to the HFG booking service HTTPS origin, then redeploy. Contact your deployment administrator."},{status:503});
   const targetUrl = `${backend}/api/${pathSegments.join("/")}${query}`;
 
   const method = request.method.toUpperCase();
