@@ -18,7 +18,10 @@ async function proxy(request: NextRequest, pathSegments: string[]): Promise<Next
   }
 
   const query = new URL(request.url).search || "";
-  const targetUrl = `${BACKEND_BASE}/api/${pathSegments.join("/")}${query}`;
+  const isWhatsApp = pathSegments[0] === "admin" && pathSegments[1] === "whatsapp";
+  const backend = isWhatsApp ? (process.env.BOOKING_BACKEND_URL || "").replace(/\/$/, "") : BACKEND_BASE;
+  if (!backend) return NextResponse.json({error:"Booking backend is not configured"},{status:503});
+  const targetUrl = `${backend}/api/${pathSegments.join("/")}${query}`;
 
   const method = request.method.toUpperCase();
   const origin = request.headers.get("origin");

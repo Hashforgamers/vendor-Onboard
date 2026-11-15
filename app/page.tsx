@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Image from 'next/image';
+import WhatsAppSettings from './whatsapp-settings';
 import {
   AlertTriangle,
   BarChart3,
@@ -44,6 +45,7 @@ type ModuleId =
   | 'plans'
   | 'partners'
   | 'products'
+  | 'whatsapp'
   | 'newsletter'
   | 'kiosk'
   | 'notification-context';
@@ -223,6 +225,7 @@ const navItems: Array<{ id: ModuleId; label: string; icon: React.ComponentType<{
   { id: 'subscriptions', label: 'Cafe Subscriptions', icon: Monitor },
   { id: 'partners', label: 'Partners', icon: Handshake },
   { id: 'products', label: 'Catalog', icon: Package },
+  { id: 'whatsapp', label: 'WhatsApp', icon: Mail },
   { id: 'newsletter', label: 'Newsletter', icon: Mail },
   { id: 'kiosk', label: 'Kiosk releases', icon: Monitor },
   { id: 'notification-context', label: 'Push notifications', icon: Mail },
@@ -1878,6 +1881,7 @@ export default function HomePage() {
     if (active === 'products') return <ProductsPage />;
     if (active === 'notification-context') return <NotificationContextPage />;
     if (active === 'kiosk') return <KioskReleasesPage />;
+    if (active === 'whatsapp') return <WhatsAppSettings api={apiRequest} />;
     if (active === 'newsletter') return <NewsletterPage vendors={vendors} />;
     return <OperationalPage active={active} vendors={vendors} />;
   }, [active, vendors, query, setVendors, reload]);
