@@ -32,6 +32,10 @@ async function proxy(request: NextRequest, pathSegments: string[]): Promise<Next
   headers.set("accept", "application/json");
 
   const adminKey = process.env.SUPER_ADMIN_API_KEY;
+  const isWhatsAppAdmin = pathSegments[0] === "admin" && pathSegments[1] === "whatsapp";
+  if (isWhatsAppAdmin && !adminKey) {
+    return NextResponse.json({error:"WhatsApp admin access is not configured. Set the same SUPER_ADMIN_API_KEY in the super-admin and booking service deployments."},{status:503});
+  }
   if (pathSegments[0] === "admin" && adminKey) {
     headers.set("x-admin-key", adminKey);
   }
@@ -64,6 +68,9 @@ async function proxy(request: NextRequest, pathSegments: string[]): Promise<Next
     });
 
     const responseText = await upstream.text();
+    if (isWhatsAppAdmin && upstream.status === 401) {
+      return NextResponse.json({error:"The super-admin and booking service SUPER_ADMIN_API_KEY values do not match. Set the same value in both deployments."},{status:503});
+    }
     const responseHeaders = new Headers();
     responseHeaders.set(
       "content-type",
